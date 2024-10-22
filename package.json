@@ -1,0 +1,57 @@
+{
+    "name": "quantum-vortex-docker",
+    "version": "0.0.1",
+    "private": true,
+    "author": {
+        "name": "Patryk Bechcicki",
+        "email": "patryk.bechcicki@gmail.com",
+        "github": "https://github.com/Patryk-B",
+        "gitlab": "https://gitlab.com/Patryk-B"
+    },
+    "scripts": {
+
+        "__dev_rm_desktop_dist_windows":        "pwsh.exe -Command \"Remove-Item -Force -Recurse -Path \\\"./projects/quantum-vortex-desktop/dist\\\" -ErrorAction Continue || $(exit 0)\"",
+        "__dev_rm_windows":                     "npm run __dev_rm_desktop_dist_windows",
+
+        "__dev_rm_desktop_dist_linux":          "bash -c \"sudo rm -fr \\\"./projects/quantum-vortex-desktop/dist\\\"\"",
+        "__dev_rm_linux":                       "npm run __dev_rm_desktop_dist_linux",
+
+        "__dev_docker_rmi_dangling_windows":    "pwsh.exe -Command \"if (\\\"$(docker images --filter 'dangling=true' --quiet)\\\".replace(\\\"`n\\\",\\\" \\\")) { docker rmi $(docker images --filter 'dangling=true' --quiet).replace(\\\"`n\\\",\\\" \\\") }\"",
+        "__dev_docker_rmi_dangling_linux":      "bash -c \"if [[ ! -z \\\"$(sudo docker images --filter 'dangling=true' --quiet)\\\" ]]; then sudo docker rmi \\\"$(sudo docker images --filter 'dangling=true' --quiet)\\\"; fi\"",
+
+        "__dev_docker_compose":                 "docker compose --file=docker-compose-dev.yml --env-file=env-dev.env",
+        "__dev_docker_compose_down":            "npm run __dev_docker_compose -- down",
+        "__dev_docker_compose_down_purge":      "npm run __dev_docker_compose_down -- --volumes",
+        "__dev_docker_compose_build":           "npm run __dev_docker_compose -- --progress=plain build",
+        "__dev_docker_compose_build_windows":   "pwsh.exe -Command \"npm run __dev_docker_compose_build | Tee-Object \\\"./.logs/dev/docker-compose-build/$(Get-Date -Format 'yyyy.MM.dd-HH.mm.ss').log\\\"\"",
+        "__dev_docker_compose_build_linux":     "bash -c \"npm run __dev_docker_compose_build | sudo tee \\\"./.logs/dev/docker-compose-build/$(date +'%Y.%m.%d-%H.%M.%S').log\\\"\"",
+        "__dev_docker_compose_up":              "npm run __dev_docker_compose -- up --detach",
+        "__dev_docker_compose_exec_analysis":   "npm run __dev_docker_compose -- exec analysis bash",
+
+        "__dev_clean_windows":                  "",
+        "__dev_clean_linux":                    "",
+
+        "__dev_purge_windows":                  "npm run __dev_rm_windows",
+        "__dev_purge_linux":                    "npm run __dev_rm_linux",
+
+        "__dev_init_windows":                   "",
+        "__dev_init_linux":                     "",
+
+
+
+        "dev_stop":                             "npm run __dev_docker_compose_down",
+        "dev_stop_purge_windows":               "npm run __dev_docker_compose_down_purge && npm run __dev_purge_windows",
+        "dev_stop_purge_linux":                 "npm run __dev_docker_compose_down_purge && npm run __dev_purge_linux",
+        "dev_build_windows":                    "npm run __dev_clean_windows && npm run __dev_init_windows && npm run __dev_docker_compose_build_windows",
+        "dev_build_linux":                      "npm run __dev_clean_linux && npm run __dev_init_linux && npm run __dev_docker_compose_build_linux",
+        "dev_start":                            "npm run __dev_docker_compose_up",
+
+        "dev_restart_windows":                  "npm run dev_stop && npm run dev_build_windows && npm run dev_start",
+        "dev_restart_linux":                    "npm run dev_stop && npm run dev_build_linux && npm run dev_start",
+
+        "dev_restart_purge_windows":            "npm run dev_stop_purge_windows && npm run dev_build_windows && npm run dev_start",
+        "dev_restart_purge_linux":              "npm run dev_stop_purge_linux && npm run dev_build_linux && npm run dev_start",
+
+        "dev_exec_analysis":                    "npm run __dev_docker_compose_exec_analysis"
+    }
+}

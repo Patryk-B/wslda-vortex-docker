@@ -1,0 +1,216 @@
+{
+    "folders": [
+        {
+            "name": "ROOT",
+            "path": "."
+        },
+        {
+            "name": "---- . ---- ---- ---- ---- . ----",
+            "path": "./bdf8669e-32ea-4808-8793-6e3e8421f04e"
+        },
+        {
+            "name": "/services/st-wslda-2d-vortex-analysis",
+            "path": "./services/st-wslda-2d-vortex-analysis"
+        },
+        {
+            "name": "---- . ---- ---- ---- ---- . ----",
+            "path": "./7955cf28-bb2a-4d38-a5a9-286d91779ea8"
+        },
+        {
+            "name": "/projects/st-wslda-2d-vortex-analysis",
+            "path": "./projects/st-wslda-2d-vortex-analysis"
+        },
+        {
+            "name": "---- . ---- ---- ---- ---- . ----",
+            "path": "./db634b7a-3565-4d7a-9e5c-1513384e48f2"
+        },
+    ],
+    "extensions": {
+        "recommendations": [
+            "aaron-bond.better-comments",
+            "streetsidesoftware.code-spell-checker",
+            "streetsidesoftware.code-spell-checker-polish"
+        ]
+    },
+    "settings": {
+
+        // ---- . ---- ---- ---- ---- . ----
+        // git:
+        // ---- . ---- ---- ---- ---- . ----
+        "git.detectSubmodulesLimit": 10,
+        "git.detectSubmodules": true,
+        "git.ignoreSubmodules": false,
+
+        // ---- . ---- ---- ---- ---- . ----
+        // terminal:
+        // ---- . ---- ---- ---- ---- . ----
+        "terminal.integrated.scrollback": 1000000,
+        "terminal.integrated.shellIntegration.history": 1000,
+        "terminal.integrated.persistentSessionReviveProcess": "onExitAndWindowClose",
+
+        // ---- . ---- ---- ---- ---- . ----
+        // terminal:
+        // ---- . ---- ---- ---- ---- . ----
+        "[cpp]": {
+            "editor.formatOnSave": false,
+        },
+
+        // ---- . ---- ---- ---- ---- . ----
+        // extension:
+        // - better-comments:
+        // ---- . ---- ---- ---- ---- . ----
+        "better-comments.highlightPlainText": false,
+        "better-comments.multilineComments": true,
+        "better-comments.tags": [
+            {
+                // //! ---- . ---- ---- ---- ---- . ----
+                // //! error:
+                // //! ---- . ---- ---- ---- ---- . ----
+                "tag": "!",
+                "color": "#FF0000",
+                "strikethrough": false,
+                "underline": false,
+                "backgroundColor": "transparent",
+                "bold": false,
+                "italic": false
+            },
+            {
+                // //? ---- . ---- ---- ---- ---- . ----
+                // //? warning:
+                // //? ---- . ---- ---- ---- ---- . ----
+                "tag": "?",
+                "color": "#FF8C00",
+                "strikethrough": false,
+                "underline": false,
+                "backgroundColor": "transparent",
+                "bold": false,
+                "italic": false
+            },
+            {
+                // //@ ---- . ---- ---- ---- ---- . ----
+                // //@ info:
+                // //@ ---- . ---- ---- ---- ---- . ----
+                "tag": "@",
+                "color": "#1E90FF",
+                "strikethrough": false,
+                "underline": false,
+                "backgroundColor": "transparent",
+                "bold": false,
+                "italic": false
+            },
+            {
+                // //^ ---- . ---- ---- ---- ---- . ----
+                // //^ note:
+                // //^ ---- . ---- ---- ---- ---- . ----
+                "tag": "^",
+                "color": "#9dd227",
+                "strikethrough": false,
+                "underline": false,
+                "backgroundColor": "transparent",
+                "bold": false,
+                "italic": false
+            },
+            {
+                // //~ ---- . ---- ---- ---- ---- . ----
+                // //~ obsolete:
+                // //~ ---- . ---- ---- ---- ---- . ----
+                "tag": "~",
+                "color": "#354230",
+                "strikethrough": false,
+                "underline": false,
+                "backgroundColor": "transparent",
+                "bold": false,
+                "italic": false
+            },
+        ],
+
+        // ---- . ---- ---- ---- ---- . ----
+        // extension:
+        // - code-spell-checker:
+        // ---- . ---- ---- ---- ---- . ----
+        "cSpell.enabled": true,
+        "cSpell.language": "en,pl",
+        "cSpell.globRoot": "${workspaceFolder}",
+        "cSpell.files": [ "**/*" ],
+        "cSpell.overrides": [
+            {
+                "filename": "**/*.dockerfile",
+                "languageId": "plaintext"
+            }
+        ],
+        "cSpell.words": [
+            "cntr",
+            "dbadmin",
+            "Dispatchable",
+            "distro",
+            "gitmodules",
+            "healthcheck",
+            "mltrainer",
+            "modeldir",
+            "mysqladmin",
+            "phpmyadmin",
+            "pwsh",
+            "pwsh.exe",
+            "Queueable",
+            "RESULTSDIR",
+            "scrollback",
+            "workdir"
+        ],
+
+        // ---- . ---- ---- ---- ---- . ----
+        // new settings:
+        // ---- . ---- ---- ---- ---- . ----
+        "": "",
+        "files.associations": {
+            ".gitattributes": "properties",
+            ".gitconfig": "properties",
+            ".gitignore": "ignore",
+            ".npmignore": "ignore",
+            "*.code-workspace": "jsonc",
+            "*.code-workspace.backup": "jsonc",
+            "settings.json": "jsonc",
+            "tasks.json": "jsonc",
+            "*.env": "dotenv",
+            "*.env.backup": "dotenv",
+            "*.env.example": "dotenv",
+            "*.db": "mongodb",
+            "*.db.backup": "mongodb",
+            "*.db.example": "mongodb",
+            "*.mongo": "mongodb",
+            "*.mongo.backup": "mongodb",
+            "*.mongo.example": "mongodb",
+            "*.mongodb": "mongodb",
+            "*.mongodb.backup": "mongodb",
+            "*.mongodb.example": "mongodb",
+            "*.json": "json",
+            "*.json.backup": "json",
+            "*.json.example": "json",
+            "*.yml": "yaml",
+            "*.yml.backup": "yaml",
+            "*.yml.example": "yaml",
+            ".prettier.ignore": "ignore",
+            ".eslint.ignore": "ignore",
+            "*.js": "javascript",
+            "*.js.backup": "javascript",
+            "jsconfig.json": "jsonc",
+            "jsconfig.dev.json": "jsonc",
+            "jsconfig.dev.backend.json": "jsonc",
+            "jsconfig.dev.frontend.json": "jsonc",
+            "jsconfig.dev.server.json": "jsonc",
+            "jsconfig.prod.json": "jsonc",
+            "jsconfig.prod.backend.json": "jsonc",
+            "jsconfig.prod.frontend.json": "jsonc",
+            "*.ts": "typescript",
+            "*.ts.backup": "typescript",
+            "tsconfig.json": "jsonc",
+            "tsconfig.dev.json": "jsonc",
+            "tsconfig.dev.backend.json": "jsonc",
+            "tsconfig.dev.frontend.json": "jsonc",
+            "tsconfig.dev.server.json": "jsonc",
+            "tsconfig.prod.json": "jsonc",
+            "tsconfig.prod.backend.json": "jsonc",
+            "tsconfig.prod.frontend.json": "jsonc",
+            "xtr1common": "cpp"
+        },
+    }
+}

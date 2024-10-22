@@ -1,0 +1,40 @@
+#? ---- . ---- ---- ---- ---- . ----
+#? services:
+#? ---- . ---- ---- ---- ---- . ----
+services:
+  # ---- . ---- ---- ---- ---- . ----
+  # analysis:
+  # ---- . ---- ---- ---- ---- . ----
+  analysis:
+    image: st-wslda-2d-vortex-analysis
+    privileged: true
+    build:
+      context: ./services/st-wslda-2d-vortex-analysis
+      dockerfile: dev-ubuntu-24.10.dockerfile
+      additional_contexts:
+        source: ./projects/st-wslda-2d-vortex-analysis
+        results: ./results
+      args:
+        # app analysis's:
+        - ARG_APP_ANALYSIS_TIMEZONE=${ENV_APP_ANALYSIS_TIMEZONE}
+        - ARG_APP_ANALYSIS_LOCALE=${ENV_APP_ANALYSIS_LOCALE}
+        - ARG_APP_ANALYSIS_WORKDIR_HOST=${ENV_APP_ANALYSIS_WORKDIR_HOST}
+        - ARG_APP_ANALYSIS_WORKDIR_CNTR=${ENV_APP_ANALYSIS_WORKDIR_CNTR}
+        - ARG_APP_ANALYSIS_RESULTSDIR_HOST=${ENV_APP_ANALYSIS_RESULTSDIR_HOST}
+        - ARG_APP_ANALYSIS_RESULTSDIR_CNTR=${ENV_APP_ANALYSIS_RESULTSDIR_CNTR}
+    volumes:
+      # workdir:
+      - ${ENV_APP_ANALYSIS_WORKDIR_HOST}:${ENV_APP_ANALYSIS_WORKDIR_CNTR}
+      # results:
+      - ${ENV_APP_ANALYSIS_RESULTSDIR_CNTR}:${ENV_APP_ANALYSIS_RESULTSDIR_CNTR}
+    networks:
+      - net_internal
+    stdin_open: true
+    tty: true
+
+#? ---- . ---- ---- ---- ---- . ----
+#? networks:
+#? ---- . ---- ---- ---- ---- . ----
+networks:
+  net_internal:
+    driver: bridge

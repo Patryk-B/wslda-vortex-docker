@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+
+#? ---- . ---- ---- ---- ---- . ----
+#? info:
+#? - must be executed by root user
+#? - executing commands like "<command> || exit 1" ensures:
+#?   - "|| exit 1"   execution of the script will stop in the event of an error,
+#? ---- . ---- ---- ---- ---- . ----
+
+# #? ---- . ---- ---- ---- ---- . ----
+# #? synchronize stdout and stderr:
+# #? ---- . ---- ---- ---- ---- . ----
+
+# # synchronize stdout and stderr by redirecting stdout to stderr for the entire script
+# # - commands output to stdout, while set -v and set -x output to stderr, which results in data from both streams beeing printed out of order
+# exec 1>&2
+
+# #? ---- . ---- ---- ---- ---- . ----
+# #? set shell options:
+# #? ---- . ---- ---- ---- ---- . ----
+
+# # set:
+# # - e === stop script if any of the commands fails
+# # - v === print lines
+# # - x === expand commands
+# set -evx
+
+#? ---- . ---- ---- ---- ---- . ----
+#? args:
+#? ---- . ---- ---- ---- ---- . ----
+
+# parse args:
+while [ $# -gt 0 ]; do
+
+    # switch:
+    case "$1" in
+
+        # case:
+        "--app-analysis-workdir")
+            APP_ANALYSIS_WORKDIR="$2"
+            shift 2
+            ;;
+
+        # case:
+        "--app-analysis-configdir")
+            APP_ANALYSIS_CONFIGDIR="$2"
+            shift 2
+            ;;
+
+        # case:
+        "--app-analysis-templatedir")
+            APP_ANALYSIS_TEMPLATEDIR="$2"
+            shift 2
+            ;;
+
+        # case:
+        "--app-analysis-resultsdir")
+            APP_ANALYSIS_RESULTSDIR="$2"
+            shift 2
+            ;;
+
+        # default case:
+        *)
+            echo "unkown option: $1"
+            shift 1
+            ;;
+
+    esac
+
+done
+
+# print args:
+HEADER="\n"
+HEADER+="# >>> ---- . ---- ---- ---- ---- . ----\n"
+HEADER+="# >>> entrypoint:\n"
+HEADER+="# >>> - args:\n"
+HEADER+="# >>> ---- . ---- ---- ---- ---- . ----\n"
+HEADER+="\n"
+HEADER+="APP_ANALYSIS_WORKDIR: ....... ${APP_ANALYSIS_WORKDIR}\n"
+HEADER+="APP_ANALYSIS_CONFIGDIR: ..... ${APP_ANALYSIS_CONFIGDIR}\n"
+HEADER+="APP_ANALYSIS_TEMPLATEDIR: ... ${APP_ANALYSIS_TEMPLATEDIR}\n"
+HEADER+="APP_ANALYSIS_RESULTSDIR: .... ${APP_ANALYSIS_RESULTSDIR}\n"
+HEADER+="\n"
+echo -e "${HEADER}"
+
+# $APP_ANALYSIS_WORKDIR directory must exist:
+if [[ ! -d "${APP_ANALYSIS_WORKDIR}" ]]; then echo ">>> ERROR: '${APP_ANALYSIS_WORKDIR}' directory does not exist" && exit 1; fi
+
+# $APP_ANALYSIS_CONFIGDIR directory must exist:
+if [[ ! -d "${APP_ANALYSIS_CONFIGDIR}" ]]; then echo ">>> ERROR: '${APP_ANALYSIS_CONFIGDIR}' directory does not exist" && exit 1; fi
+
+# $APP_ANALYSIS_TEMPLATEDIR directory must exist:
+if [[ ! -d "${APP_ANALYSIS_TEMPLATEDIR}" ]]; then echo ">>> ERROR: '${APP_ANALYSIS_TEMPLATEDIR}' directory does not exist" && exit 1; fi
+
+# $APP_ANALYSIS_RESULTSDIR directory must exist:
+if [[ ! -d "${APP_ANALYSIS_RESULTSDIR}" ]]; then echo ">>> ERROR: '${APP_ANALYSIS_RESULTSDIR}' directory does not exist" && exit 1; fi
+
+#? ---- . ---- ---- ---- ---- . ----
+#? envs:
+#? ---- . ---- ---- ---- ---- . ----
+
+# print envs:
+HEADER="\n"
+HEADER+="# >>> ---- . ---- ---- ---- ---- . ----\n"
+HEADER+="# >>> entrypoint:\n"
+HEADER+="# >>> - envs:\n"
+HEADER+="# >>> ---- . ---- ---- ---- ---- . ----\n"
+HEADER+="\n"
+HEADER+="$(env)"
+HEADER+="\n"
+echo -e "${HEADER}"
+
+#? ---- . ---- ---- ---- ---- . ----
+#? keep container online
+#? ---- . ---- ---- ---- ---- . ----
+{
+
+    # print header:
+    HEADER="\n"
+    HEADER+="# >>> ---- . ---- ---- ---- ---- . ----\n"
+    HEADER+="# >>> entrypoint:\n"
+    HEADER+="# >>> - keep container online:\n"
+    HEADER+="# >>> ---- . ---- ---- ---- ---- . ----\n"
+    HEADER+="\n"
+    echo -e "${HEADER}"
+
+    # keep container online:
+    tail -f /dev/null
+
+}
+
+# #? ---- . ---- ---- ---- ---- . ----
+# #? unset shell options:
+# #? ---- . ---- ---- ---- ---- . ----
+
+# # unset:
+# set +evx
