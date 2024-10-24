@@ -54,8 +54,14 @@ while [ $# -gt 0 ]; do
             ;;
 
         # case:
-        "--app-analysis-resultsdir")
-            APP_ANALYSIS_RESULTSDIR="$2"
+        "--app-analysis-results-data-dir")
+            APP_ANALYSIS_RESULTS_DATA_DIR="$2"
+            shift 2
+            ;;
+
+        # case:
+        "--app-analysis-results-analysis-dir")
+            APP_ANALYSIS_RESULTS_ANALYSIS_DIR="$2"
             shift 2
             ;;
 
@@ -76,10 +82,11 @@ HEADER+="# >>> entrypoint:\n"
 HEADER+="# >>> - args:\n"
 HEADER+="# >>> ---- . ---- ---- ---- ---- . ----\n"
 HEADER+="\n"
-HEADER+="APP_ANALYSIS_WORKDIR: ....... ${APP_ANALYSIS_WORKDIR}\n"
-HEADER+="APP_ANALYSIS_CONFIGDIR: ..... ${APP_ANALYSIS_CONFIGDIR}\n"
-HEADER+="APP_ANALYSIS_TEMPLATEDIR: ... ${APP_ANALYSIS_TEMPLATEDIR}\n"
-HEADER+="APP_ANALYSIS_RESULTSDIR: .... ${APP_ANALYSIS_RESULTSDIR}\n"
+HEADER+="APP_ANALYSIS_WORKDIR: ................ ${APP_ANALYSIS_WORKDIR}\n"
+HEADER+="APP_ANALYSIS_CONFIGDIR: .............. ${APP_ANALYSIS_CONFIGDIR}\n"
+HEADER+="APP_ANALYSIS_TEMPLATEDIR: ............ ${APP_ANALYSIS_TEMPLATEDIR}\n"
+HEADER+="APP_ANALYSIS_RESULTS_DATA_DIR: ....... ${APP_ANALYSIS_RESULTS_DATA_DIR}\n"
+HEADER+="APP_ANALYSIS_RESULTS_ANALYSIS_DIR: ... ${APP_ANALYSIS_RESULTS_ANALYSIS_DIR}"
 HEADER+="\n"
 echo -e "${HEADER}"
 
@@ -92,8 +99,11 @@ if [[ ! -d "${APP_ANALYSIS_CONFIGDIR}" ]]; then echo ">>> ERROR: '${APP_ANALYSIS
 # $APP_ANALYSIS_TEMPLATEDIR directory must exist:
 if [[ ! -d "${APP_ANALYSIS_TEMPLATEDIR}" ]]; then echo ">>> ERROR: '${APP_ANALYSIS_TEMPLATEDIR}' directory does not exist" && exit 1; fi
 
-# $APP_ANALYSIS_RESULTSDIR directory must exist:
-if [[ ! -d "${APP_ANALYSIS_RESULTSDIR}" ]]; then echo ">>> ERROR: '${APP_ANALYSIS_RESULTSDIR}' directory does not exist" && exit 1; fi
+# $APP_ANALYSIS_RESULTS_DATA_DIR directory must exist:
+if [[ ! -d "${APP_ANALYSIS_RESULTS_DATA_DIR}" ]]; then echo ">>> ERROR: '${APP_ANALYSIS_RESULTS_DATA_DIR}' directory does not exist" && exit 1; fi
+
+# $APP_ANALYSIS_RESULTS_ANALYSIS_DIR directory must exist:
+if [[ ! -d "${APP_ANALYSIS_RESULTS_ANALYSIS_DIR}" ]]; then echo ">>> ERROR: '${APP_ANALYSIS_RESULTS_ANALYSIS_DIR}' directory does not exist" && exit 1; fi
 
 #? ---- . ---- ---- ---- ---- . ----
 #? envs:

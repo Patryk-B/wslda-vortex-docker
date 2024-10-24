@@ -1,13 +1,7 @@
 {
-    "name": "quantum-vortex-docker",
+    "name": "wslda-vortex-docker",
     "version": "0.0.1",
     "private": true,
-    "author": {
-        "name": "Patryk Bechcicki",
-        "email": "patryk.bechcicki@gmail.com",
-        "github": "https://github.com/Patryk-B",
-        "gitlab": "https://gitlab.com/Patryk-B"
-    },
     "scripts": {
 
         "__dev_rm_desktop_dist_windows":        "pwsh.exe -Command \"Remove-Item -Force -Recurse -Path \\\"./projects/quantum-vortex-desktop/dist\\\" -ErrorAction Continue || $(exit 0)\"",

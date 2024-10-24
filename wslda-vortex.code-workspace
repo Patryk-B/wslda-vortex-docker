@@ -9,20 +9,28 @@
             "path": "./bdf8669e-32ea-4808-8793-6e3e8421f04e"
         },
         {
-            "name": "/services/st-wslda-2d-vortex-analysis",
-            "path": "./services/st-wslda-2d-vortex-analysis"
+            "name": "/services/wslda-vortex-analysis",
+            "path": "./services/wslda-vortex-analysis"
         },
         {
             "name": "---- . ---- ---- ---- ---- . ----",
             "path": "./7955cf28-bb2a-4d38-a5a9-286d91779ea8"
         },
         {
-            "name": "/projects/st-wslda-2d-vortex-analysis",
-            "path": "./projects/st-wslda-2d-vortex-analysis"
+            "name": "/projects/wslda-vortex-analysis",
+            "path": "./projects/wslda-vortex-analysis"
         },
         {
             "name": "---- . ---- ---- ---- ---- . ----",
             "path": "./db634b7a-3565-4d7a-9e5c-1513384e48f2"
+        },
+        {
+            "name": "/results",
+            "path": "./results"
+        },
+        {
+            "name": "---- . ---- ---- ---- ---- . ----",
+            "path": "./bbfe851d-3512-4012-94c5-fa19bbc9f747"
         },
     ],
     "extensions": {
@@ -141,7 +149,7 @@
         "cSpell.words": [
             "cntr",
             "dbadmin",
-            "Dispatchable",
+            "dispatchable",
             "distro",
             "gitmodules",
             "healthcheck",
@@ -150,10 +158,9 @@
             "mysqladmin",
             "phpmyadmin",
             "pwsh",
-            "pwsh.exe",
-            "Queueable",
-            "RESULTSDIR",
+            "queueable",
             "scrollback",
+            "wdata",
             "workdir"
         ],
 
@@ -161,56 +168,5 @@
         // new settings:
         // ---- . ---- ---- ---- ---- . ----
         "": "",
-        "files.associations": {
-            ".gitattributes": "properties",
-            ".gitconfig": "properties",
-            ".gitignore": "ignore",
-            ".npmignore": "ignore",
-            "*.code-workspace": "jsonc",
-            "*.code-workspace.backup": "jsonc",
-            "settings.json": "jsonc",
-            "tasks.json": "jsonc",
-            "*.env": "dotenv",
-            "*.env.backup": "dotenv",
-            "*.env.example": "dotenv",
-            "*.db": "mongodb",
-            "*.db.backup": "mongodb",
-            "*.db.example": "mongodb",
-            "*.mongo": "mongodb",
-            "*.mongo.backup": "mongodb",
-            "*.mongo.example": "mongodb",
-            "*.mongodb": "mongodb",
-            "*.mongodb.backup": "mongodb",
-            "*.mongodb.example": "mongodb",
-            "*.json": "json",
-            "*.json.backup": "json",
-            "*.json.example": "json",
-            "*.yml": "yaml",
-            "*.yml.backup": "yaml",
-            "*.yml.example": "yaml",
-            ".prettier.ignore": "ignore",
-            ".eslint.ignore": "ignore",
-            "*.js": "javascript",
-            "*.js.backup": "javascript",
-            "jsconfig.json": "jsonc",
-            "jsconfig.dev.json": "jsonc",
-            "jsconfig.dev.backend.json": "jsonc",
-            "jsconfig.dev.frontend.json": "jsonc",
-            "jsconfig.dev.server.json": "jsonc",
-            "jsconfig.prod.json": "jsonc",
-            "jsconfig.prod.backend.json": "jsonc",
-            "jsconfig.prod.frontend.json": "jsonc",
-            "*.ts": "typescript",
-            "*.ts.backup": "typescript",
-            "tsconfig.json": "jsonc",
-            "tsconfig.dev.json": "jsonc",
-            "tsconfig.dev.backend.json": "jsonc",
-            "tsconfig.dev.frontend.json": "jsonc",
-            "tsconfig.dev.server.json": "jsonc",
-            "tsconfig.prod.json": "jsonc",
-            "tsconfig.prod.backend.json": "jsonc",
-            "tsconfig.prod.frontend.json": "jsonc",
-            "xtr1common": "cpp"
-        },
     }
 }
