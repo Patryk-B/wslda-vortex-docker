@@ -6,32 +6,30 @@ services:
   # analysis:
   # ---- . ---- ---- ---- ---- . ----
   analysis:
-    image: wslda-vortex-analysis
+    image: ${ENV_APP_ANALYSIS_CODENAME}
     privileged: true
     build:
-      context: ./services/wslda-vortex-analysis
-      dockerfile: dev-ubuntu-24.10.dockerfile
+      context: ./services/${ENV_APP_ANALYSIS_CODENAME}
+      dockerfile: ${ENV_APP_ANALYSIS_DOCKERFILE_NAME}.dockerfile
       additional_contexts:
         app: ${ENV_APP_ANALYSIS_WORKDIR_HOST}
-        results_data: ${ENV_APP_ANALYSIS_RESULTS_DATA_DIR_HOST}
-        results_analysis: ${ENV_APP_ANALYSIS_RESULTS_ANALYSIS_DIR_HOST}
+        results: ${ENV_APP_ANALYSIS_RESULTSDIR_HOST}
       args:
         # app analysis's:
+        - ARG_APP_ANALYSIS_DOCKERFILE_NAME=${ENV_APP_ANALYSIS_DOCKERFILE_NAME}
         - ARG_APP_ANALYSIS_TIMEZONE=${ENV_APP_ANALYSIS_TIMEZONE}
         - ARG_APP_ANALYSIS_LOCALE=${ENV_APP_ANALYSIS_LOCALE}
         - ARG_APP_ANALYSIS_WORKDIR_HOST=${ENV_APP_ANALYSIS_WORKDIR_HOST}
         - ARG_APP_ANALYSIS_WORKDIR_CNTR=${ENV_APP_ANALYSIS_WORKDIR_CNTR}
-        - ARG_APP_ANALYSIS_RESULTS_DATA_DIR_HOST=${ENV_APP_ANALYSIS_RESULTS_DATA_DIR_HOST}
-        - ARG_APP_ANALYSIS_RESULTS_DATA_DIR_CNTR=${ENV_APP_ANALYSIS_RESULTS_DATA_DIR_CNTR}
-        - ARG_APP_ANALYSIS_RESULTS_ANALYSIS_DIR_HOST=${ENV_APP_ANALYSIS_RESULTS_ANALYSIS_DIR_HOST}
-        - ARG_APP_ANALYSIS_RESULTS_ANALYSIS_DIR_CNTR=${ENV_APP_ANALYSIS_RESULTS_ANALYSIS_DIR_CNTR}
+        - ARG_APP_ANALYSIS_RESULTSDIR_HOST=${ENV_APP_ANALYSIS_RESULTSDIR_HOST}
+        - ARG_APP_ANALYSIS_RESULTSDIR_CNTR=${ENV_APP_ANALYSIS_RESULTSDIR_CNTR}
     volumes:
       # workdir:
       - ${ENV_APP_ANALYSIS_WORKDIR_HOST}:${ENV_APP_ANALYSIS_WORKDIR_CNTR}
-      # results-data-dir:
-      - ${ENV_APP_ANALYSIS_RESULTS_DATA_DIR_HOST}:${ENV_APP_ANALYSIS_RESULTS_DATA_DIR_CNTR}
-      # results-analysis-dir:
-      - ${ENV_APP_ANALYSIS_RESULTS_ANALYSIS_DIR_HOST}:${ENV_APP_ANALYSIS_RESULTS_ANALYSIS_DIR_CNTR}
+      # cache-root:
+      - ${ENV_APP_ANALYSIS_CACHE_ROOT_HOST}:${ENV_APP_ANALYSIS_CACHE_ROOT_CNTR}
+      # resultsdir:
+      - ${ENV_APP_ANALYSIS_RESULTSDIR_HOST}:${ENV_APP_ANALYSIS_RESULTSDIR_CNTR}
     networks:
       - net_internal
     stdin_open: true

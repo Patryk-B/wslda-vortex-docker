@@ -7,15 +7,37 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.cm as cm
+from enum import Enum
 from scipy.interpolate import interp1d
 from wdata.io import WData, Var
 
 
+class Axis(int, Enum):
+    X = 0
+    Y = 1
+    Z = 2
+
+class Component(int, Enum):
+    X = 0
+    Y = 1
+    Z = 2
+
+class Grid:
+    def __init__(self, data: WData):
+        self.Nx = data.Nxyz[Axis.X]
+        self.Ny = data.Nxyz[Axis.Y]
+        self.dx = data.dxyz[Axis.X]
+        self.dy = data.dxyz[Axis.Y]
+        self.x = data.xyz[Axis.X]
+        self.y = data.xyz[Axis.Y]
+        self.x_flat = self.x.flatten()
+        self.y_flat = self.y.flatten()
+
 def plot_pcolormesh(
     data,
     title,
-    xlabel,
-    ylabel,
+    label_x,
+    label_y,
 ):
     # First subplot:
     plt.pcolormesh(data, cmap='plasma', shading='auto')
@@ -26,81 +48,83 @@ def plot_pcolormesh(
     plt.savefig("plot.png", dpi=300)
     plt.cla()
 
-
 def plot_current_density(
     data: WData,
+    iteration: int,
     x_crossection_indices: List[int],
     y_crossection_indices: List[int]
 ):
-    # helpers:
-    iteration = -1
-    x_axis = 0
-    y_axis = 1
-    x_axis = 0
-    y_axis = 1
-
-    # grid:
-    x = data.xyz[x_axis]
-    y = data.xyz[y_axis]
-    x_flat = x.flatten()
-    y_flat = y.flatten()
-    Nx = data.Nxyz[x_axis]
-    Ny = data.Nxyz[y_axis]
-    pprint.pp(x_flat)
-    pprint.pp(y_flat)
-    pprint.pp(Nx)
-    pprint.pp(Ny)
-
-    # test = np.array([
-    #     [ 1, 2, 3 ],
-    #     [ 4, 5, 6 ],
-    #     [ 7, 8, 9 ]
-    # ])
-    # pprint.pp(test[0, :])
-    # pprint.pp(test[:, 0])
 
     # data:
-    j_a_x = data.j_a[iteration][x_axis]
-    j_a_y = data.j_a[iteration][y_axis]
-    j_b_x = data.j_b[iteration][x_axis]
-    j_b_y = data.j_b[iteration][y_axis]
+    # - grid:
+    Nx = data.Nxyz[Axis.X]
+    Ny = data.Nxyz[Axis.Y]
+    dx = data.dxyz[Axis.X]
+    dy = data.dxyz[Axis.Y]
+    x = data.xyz[Axis.X]
+    y = data.xyz[Axis.Y]
+    x_flat = x.flatten()
+    y_flat = y.flatten()
 
-    # create plot with sub plots:
-    subplot_h = 10
-    subplot_w = 10
-    fig_nrows = 1
-    fig_ncols = 3
-    fig_row_ratios = [1, 1, 1]
-    fig_col_ratios = [1]
-    fig_w = np.sum([subplot_w * ratio / np.max(fig_row_ratios) for ratio in fig_row_ratios])
-    fig_h = np.sum([subplot_h * ratio / np.max(fig_col_ratios) for ratio in fig_col_ratios])
-    fig = plt.figure(figsize=(fig_w, fig_h))
-    gs = gridspec.GridSpec(
-        nrows=fig_nrows,
-        ncols=fig_ncols,
-        width_ratios=fig_row_ratios,
-        height_ratios=fig_col_ratios
+    # data:
+    # - current density
+    j_a_x = data.j_a[iteration][Component.X]
+    j_a_y = data.j_a[iteration][Component.Y]
+    j_b_x = data.j_b[iteration][Component.X]
+    j_b_y = data.j_b[iteration][Component.Y]
+
+    # plot's width and height:
+    subplot_w = 7
+    subplot_h = 7
+    plot_ncols = 3
+    plot_nrows = 1
+    plot_cols_w_ratios = [1, 1, 1]
+    plot_rows_h_ratios = [1]
+    plot_w = np.sum([subplot_w * ratio for ratio in (plot_cols_w_ratios / np.max(plot_cols_w_ratios))])
+    plot_h = np.sum([subplot_h * ratio for ratio in (plot_rows_h_ratios / np.max(plot_rows_h_ratios))])
+
+    # create plot and subplots:
+    figure = plt.figure(figsize=(plot_w, plot_h))
+    grid = gridspec.GridSpec(
+        nrows=plot_nrows,
+        ncols=plot_ncols,
+        width_ratios=plot_cols_w_ratios,
+        height_ratios=plot_rows_h_ratios
     )
-    ax0 = fig.add_subplot(gs[0])
-    ax1 = fig.add_subplot(gs[1])
-    ax2 = fig.add_subplot(gs[2])
+    axis_0 = figure.add_subplot(grid[0])
+    axis_1 = figure.add_subplot(grid[1])
+    axis_2 = figure.add_subplot(grid[2])
 
-    # First subplot:
-    plot0 = ax0.pcolormesh(x_flat, y_flat, j_a_x, cmap='plasma', shading='auto')
-    ax0.set_aspect('equal', adjustable='box')
-    ax0.set_title('j_a_x')
-    ax0.set_xlabel('y')
-    ax0.set_ylabel('j_a_x')
-    fig.colorbar(
-        plot0, ax=ax0, location='left', orientation='vertical', fraction=0.035, pad=-0.16
+    # first subplot:
+    pcolormesh_0 = axis_0.pcolormesh(x_flat, y_flat, j_a_x, cmap='plasma', shading='auto')
+    axis_0.set_aspect('equal', adjustable='box')
+    axis_0.set_title('j_a_x')
+    axis_0.set_xlabel('x')
+    axis_0.set_ylabel('y')
+    figure.colorbar(
+        pcolormesh_0,
+        ax=axis_0,
+
+        # location='left',
+        # orientation='vertical',
+        # fraction=0.035,
+        # pad=-0.16
+
+        location='right',
+        orientation='vertical',
+        fraction=0.035,
+        pad=0.01,
     )
 
-    fig.tight_layout()
-    fig.savefig("plot.png", dpi=300)
+    figure.tight_layout()
+    figure.savefig(
+        fname="plot.png",
+        dpi=300
+    )
 
     # # crossections:
     # for i in [35, 38, 40, 42, 45]:
-    #     j_a_x = data.j_a[iteration][x_axis][i, :]
+    #     j_a_x = data.j_a[iteration][Axis.X][i, :]
     #     plt.plot(x, j_a_x, label=f"j_a_x(x = {x_flat[i]:.2f}, y)")
     # plt.legend(loc='upper right')
     # plt.xlabel('y')
@@ -111,8 +135,8 @@ def plot_current_density(
 
     # rho_a = data.rho_a[iteration][int(Nx/2),:]
     # rho_b = data.rho_b[iteration][int(Nx/2),:]
-    # j_b_x = data.j_b[iteration][x_axis][int(Nx/2)]
-    # j_b_y = data.j_b[iteration][y_axis][int(Ny/2)]
+    # j_b_x = data.j_b[iteration][Axis.X][int(Nx/2)]
+    # j_b_y = data.j_b[iteration][Axis.Y][int(Ny/2)]
 
 def test_02(data: WData):
     j_a = data.j_a[-1] # last frame
@@ -162,15 +186,13 @@ def main() -> int:
 
     # helpers:
     iteration = -1
-    x_axis = 0
-    y_axis = 1
-
     x_crossection_indices = [20, 30, 40, 50, 60],
     y_crossection_indices = [20, 30, 40, 50, 60],
 
     # plot:
     plot_current_density(
         data = data,
+        iteration = iteration,
         x_crossection_indices = x_crossection_indices,
         y_crossection_indices = y_crossection_indices,
     )

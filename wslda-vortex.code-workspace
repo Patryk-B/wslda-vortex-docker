@@ -6,32 +6,32 @@
         },
         {
             "name": "---- . ---- ---- ---- ---- . ----",
-            "path": "./bdf8669e-32ea-4808-8793-6e3e8421f04e"
+            "path": "bdf8669e-32ea-4808-8793-6e3e8421f04e"
         },
         {
             "name": "/services/wslda-vortex-analysis",
-            "path": "./services/wslda-vortex-analysis"
+            "path": "services/wslda-vortex-analysis"
         },
         {
             "name": "---- . ---- ---- ---- ---- . ----",
-            "path": "./7955cf28-bb2a-4d38-a5a9-286d91779ea8"
+            "path": "7955cf28-bb2a-4d38-a5a9-286d91779ea8"
         },
         {
             "name": "/projects/wslda-vortex-analysis",
-            "path": "./projects/wslda-vortex-analysis"
+            "path": "projects/wslda-vortex-analysis"
         },
         {
             "name": "---- . ---- ---- ---- ---- . ----",
-            "path": "./db634b7a-3565-4d7a-9e5c-1513384e48f2"
+            "path": "db634b7a-3565-4d7a-9e5c-1513384e48f2"
         },
         {
             "name": "/results",
-            "path": "./results"
+            "path": "results"
         },
         {
             "name": "---- . ---- ---- ---- ---- . ----",
-            "path": "./bbfe851d-3512-4012-94c5-fa19bbc9f747"
-        },
+            "path": "bbfe851d-3512-4012-94c5-fa19bbc9f747"
+        }
     ],
     "extensions": {
         "recommendations": [

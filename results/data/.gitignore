@@ -1,5 +1,2 @@
-# .git:
 **/*
-
-# .gitignore:
 !.gitignore
