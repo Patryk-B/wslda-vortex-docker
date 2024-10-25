@@ -1,15 +1,23 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
-from typing import Any, Union, Tuple, List, Set, Dict
-import sys
-import pprint
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-import matplotlib.cm as cm
 from enum import Enum
+from matplotlib import ticker
 from scipy.interpolate import interp1d
+from typing import Any, Union, Tuple, List, Set, Dict, Callable
 from wdata.io import WData, Var
+import matplotlib
+import matplotlib.axes
+import matplotlib.cm as cm
+import matplotlib.figure
+import matplotlib.gridspec as gridspec
+import matplotlib.pyplot as plt
+import numpy as np
+import numpy.typing
+import pprint
+import sys
+
+
+# helpers:
 
 
 class Axis(int, Enum):
@@ -17,158 +25,279 @@ class Axis(int, Enum):
     Y = 1
     Z = 2
 
+
 class Component(int, Enum):
     X = 0
     Y = 1
     Z = 2
 
-class Grid:
-    def __init__(self, data: WData):
-        self.Nx = data.Nxyz[Axis.X]
-        self.Ny = data.Nxyz[Axis.Y]
-        self.dx = data.dxyz[Axis.X]
-        self.dy = data.dxyz[Axis.Y]
-        self.x = data.xyz[Axis.X]
-        self.y = data.xyz[Axis.Y]
-        self.x_flat = self.x.flatten()
-        self.y_flat = self.y.flatten()
 
-def plot_pcolormesh(
-    data,
+class ParsedWData(object):
+    def __init__(
+        self,
+        wdata: WData,
+        iteration: int
+    ):
+        # data:
+        # - grid:
+        self.Nx: int = wdata.Nxyz[Axis.X]
+        self.Ny: int = wdata.Nxyz[Axis.Y]
+        self.dx: float = wdata.dxyz[Axis.X]
+        self.dy: float = wdata.dxyz[Axis.Y]
+        self.x: numpy.ndarray = wdata.xyz[Axis.X]
+        self.y: numpy.ndarray = wdata.xyz[Axis.Y]
+        self.x_flat: List[float] = self.x.flatten()
+        self.y_flat: List[float] = self.y.flatten()
+
+        # data:
+        # - current density
+        self.j_a_x: numpy.memmap = wdata.j_a[iteration][Component.X]
+        self.j_a_y: numpy.memmap = wdata.j_a[iteration][Component.Y]
+        self.j_a: List[List[float]] = [[j_a_x, j_a_y] for j_a_x, j_a_y in zip(self.j_a_x, self.j_a_y)]
+        self.j_b_x: numpy.memmap = wdata.j_b[iteration][Component.X]
+        self.j_b_y: numpy.memmap = wdata.j_b[iteration][Component.Y]
+        self.j_b: List[List[float]] = [[j_b_x, j_b_y] for j_b_x, j_b_y in zip(self.j_b_x, self.j_b_y)]
+
+
+class Plot():
+    def __init__(
+        self,
+        rows_h_ratios,
+        cols_w_ratios,
+        subplot_h,
+        subplot_w,
+    ):
+        # plot's width and height:
+        self.subplot_h: float = subplot_h
+        self.subplot_w: float = subplot_w
+        self.nrows: float = len(rows_h_ratios)
+        self.ncols: float = len(cols_w_ratios)
+        self.rows_h_ratios: List[float] = rows_h_ratios
+        self.cols_w_ratios: List[float] = cols_w_ratios
+        self.h: float = np.sum([self.subplot_h * ratio for ratio in (self.rows_h_ratios / np.max(self.rows_h_ratios))])
+        self.w: float = np.sum([self.subplot_w * ratio for ratio in (self.cols_w_ratios / np.max(self.cols_w_ratios))])
+
+        # create plot and subplots:
+        self.fig = plt.figure(
+            figsize = (self.w, self.h)
+        )
+        self.gs = gridspec.GridSpec(
+            nrows = self.nrows,
+            ncols = self.ncols,
+            height_ratios = self.rows_h_ratios,
+            width_ratios  = self.cols_w_ratios,
+        )
+        self.ax: List[List[matplotlib.axes.Axes]] = [[None for _ in range(self.ncols)] for _ in range(self.nrows)]
+        for i in range(0, self.nrows):
+            for j in range(0, self.ncols):
+                self.ax[i][j] = self.fig.add_subplot(self.gs[i, j])
+
+
+class CustomScientificFormatter(ticker.ScalarFormatter):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def __call__(self, x, pos=None):
+        if x == 0:
+            return "0"  # Handle zero separately
+        else:
+            return f"{x:.1e}"  # Format to scientific notation, e.g., 1.0e-3
+
+
+def gen_scientific_formatter() -> ticker.Formatter:
+    formatter = ticker.ScalarFormatter(useMathText=True)
+    formatter.set_scientific(True)
+    formatter.set_powerlimits((-2, 2)) # Use scientific notation if <1e-2 or >1e2
+
+    return formatter
+
+
+# partial plots
+
+
+def plot_streamplot(
+    fig: matplotlib.figure.Figure,
+    ax: matplotlib.axes.Axes,
+    x: numpy.typing.ArrayLike,
+    y: numpy.typing.ArrayLike,
+    data_x: numpy.typing.ArrayLike,
+    data_y: numpy.typing.ArrayLike,
     title,
     label_x,
     label_y,
-):
-    # First subplot:
-    plt.pcolormesh(data, cmap='plasma', shading='auto')
-    plt.title(title)
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.colorbar(orientation='vertical', fraction=0.046, pad=0.04)
-    plt.savefig("plot.png", dpi=300)
-    plt.cla()
+) -> None:
+    # Plot data:
+    ax.streamplot(x, y, data_x, data_y, color='blue', linewidth=2, density=1.5)
+    ax.set_aspect('equal', adjustable='box')
+    ax.set_title(title)
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
 
-def plot_current_density(
-    data: WData,
-    iteration: int,
-    x_crossection_indices: List[int],
-    y_crossection_indices: List[int]
-):
+    # Set axis limits
+    ax.set_xlim(np.min(x), np.max(x))
+    ax.set_ylim(np.min(y), np.max(y))
 
-    # data:
-    # - grid:
-    Nx = data.Nxyz[Axis.X]
-    Ny = data.Nxyz[Axis.Y]
-    dx = data.dxyz[Axis.X]
-    dy = data.dxyz[Axis.Y]
-    x = data.xyz[Axis.X]
-    y = data.xyz[Axis.Y]
-    x_flat = x.flatten()
-    y_flat = y.flatten()
 
-    # data:
-    # - current density
-    j_a_x = data.j_a[iteration][Component.X]
-    j_a_y = data.j_a[iteration][Component.Y]
-    j_b_x = data.j_b[iteration][Component.X]
-    j_b_y = data.j_b[iteration][Component.Y]
+def plot_pseudocolor(
+    fig: matplotlib.figure.Figure,
+    ax: matplotlib.axes.Axes,
+    x: numpy.typing.ArrayLike,
+    y: numpy.typing.ArrayLike,
+    data: numpy.typing.ArrayLike,
+    title,
+    label_x,
+    label_y,
+) -> None:
+    # Plot data:
+    pcolor = ax.pcolormesh(x, y, data, cmap='plasma', shading='auto')
+    ax.set_aspect('equal', adjustable='box')
+    ax.set_title(title)
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
 
-    # plot's width and height:
-    subplot_w = 7
-    subplot_h = 7
-    plot_ncols = 3
-    plot_nrows = 1
-    plot_cols_w_ratios = [1, 1, 1]
-    plot_rows_h_ratios = [1]
-    plot_w = np.sum([subplot_w * ratio for ratio in (plot_cols_w_ratios / np.max(plot_cols_w_ratios))])
-    plot_h = np.sum([subplot_h * ratio for ratio in (plot_rows_h_ratios / np.max(plot_rows_h_ratios))])
+    # Set axis limits
+    ax.set_xlim(np.min(x), np.max(x))
+    ax.set_ylim(np.min(y), np.max(y))
 
-    # create plot and subplots:
-    figure = plt.figure(figsize=(plot_w, plot_h))
-    grid = gridspec.GridSpec(
-        nrows=plot_nrows,
-        ncols=plot_ncols,
-        width_ratios=plot_cols_w_ratios,
-        height_ratios=plot_rows_h_ratios
-    )
-    axis_0 = figure.add_subplot(grid[0])
-    axis_1 = figure.add_subplot(grid[1])
-    axis_2 = figure.add_subplot(grid[2])
-
-    # first subplot:
-    pcolormesh_0 = axis_0.pcolormesh(x_flat, y_flat, j_a_x, cmap='plasma', shading='auto')
-    axis_0.set_aspect('equal', adjustable='box')
-    axis_0.set_title('j_a_x')
-    axis_0.set_xlabel('x')
-    axis_0.set_ylabel('y')
-    figure.colorbar(
-        pcolormesh_0,
-        ax=axis_0,
-
+    # Add color bar
+    color_bar = fig.colorbar(
+        pcolor,
+        ax = ax,
+        location = 'right',
+        orientation = 'vertical',
+        fraction = 0.035,
+        pad = 0.01,
         # location='left',
         # orientation='vertical',
         # fraction=0.035,
         # pad=-0.16
-
-        location='right',
-        orientation='vertical',
-        fraction=0.035,
-        pad=0.01,
     )
 
-    figure.tight_layout()
-    figure.savefig(
-        fname="plot.png",
-        dpi=300
+    # Set scientific notation for color bar labels
+    formatter = gen_scientific_formatter()
+    color_bar.ax.yaxis.set_major_formatter(formatter)
+
+
+def plot_crossections_of_2D_data(
+    fig: matplotlib.figure.Figure,
+    ax: matplotlib.axes.Axes,
+    indices: List[int],
+    x: numpy.typing.ArrayLike,
+    data: numpy.typing.ArrayLike,
+    gen_csec_func: Callable[[numpy.typing.ArrayLike, int], numpy.typing.ArrayLike],
+    title,
+    label_x,
+    label_y,
+    gen_label_data_func: Callable[[numpy.typing.ArrayLike, int], str],
+) -> None:
+    # The default color cycle
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+
+    # Plot data:
+    for i, color in zip(indices, colors):
+        data_csec = gen_csec_func(data, i)
+
+        int_x = np.linspace(x[0], x[-1], 200)
+        int_data = interp1d(x, data_csec, kind='quadratic')
+
+        # plot points:
+        ax.plot(
+            x,
+            data_csec,
+            label=gen_label_data_func(x, i),
+            marker='o',
+            markersize=4,
+            linestyle='None',
+            color=color
+        )
+
+        # plot interpolation:
+        ax.plot(
+            int_x,
+            int_data(int_x),
+            marker='None',
+            linestyle="-",
+            color=color
+        )
+
+    # Labels
+    ax.set_title(title)
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
+
+    # Axis limits
+    ax.set_xlim(1.05 * np.min(x), 1.05 * np.max(x))
+    ax.set_ylim(1.05 * np.min(data), 1.05 * np.max(data))
+
+    # Format axis labels to scientific notation
+    formatter = gen_scientific_formatter()
+    ax.xaxis.set_major_formatter(formatter)
+    ax.yaxis.set_major_formatter(formatter)
+
+    # Add legend
+    ax.legend()
+
+
+# plot systen properties:
+
+
+def plot_current_density(
+    wdata: WData,
+    iteration: int
+):
+    # parse WData:
+    d = ParsedWData(wdata, iteration)
+
+    # gen plot:
+    p = Plot(
+        cols_w_ratios = [1, 1, 1, 1, 1, 1, 1],
+        rows_h_ratios = [1, 1],
+        subplot_w = 10,
+        subplot_h = 10,
     )
 
-    # # crossections:
-    # for i in [35, 38, 40, 42, 45]:
-    #     j_a_x = data.j_a[iteration][Axis.X][i, :]
-    #     plt.plot(x, j_a_x, label=f"j_a_x(x = {x_flat[i]:.2f}, y)")
-    # plt.legend(loc='upper right')
-    # plt.xlabel('y')
-    # plt.ylabel('j_a_x')
-    # plt.title('j_a_x')
-    # plt.savefig(f"plot.png")
-    # plt.cla()
+    # plot:
+    # - WARNING: for matplotlib to display data, p.j_*_* needs to be transposed !!!
+    #     according to https://gitlab.fizyka.pw.edu.pl/wtools/wdata/-/wikis/Examples/Python-examples#cross-section-of-velocity-field-for-quantum-vortex:
+    #     - wdata.j_a[iteration][Component.X][ Nx/2, :    ] === j_a_x( x = Nx/2, y        )
+    #     - wdata.j_a[iteration][Component.X][ :   , Ny/2 ] === j_a_x( x       , y = Ny/2 )
+    nx_half = int(d.Nx/2)
+    ny_half = int(d.Ny/2)
+    x_crossections_01 = [nx_half - 10, nx_half - 5, nx_half - 2, nx_half]
+    x_crossections_02 = [nx_half - 10, nx_half - 5, nx_half - 2, nx_half, nx_half + 2, nx_half + 5, nx_half + 10]
+    y_crossections_01 = [ny_half - 10, ny_half - 5, ny_half - 2, ny_half]
+    y_crossections_02 = [ny_half - 10, ny_half - 5, ny_half - 2, ny_half, ny_half + 2, ny_half + 5, ny_half + 10]
 
-    # rho_a = data.rho_a[iteration][int(Nx/2),:]
-    # rho_b = data.rho_b[iteration][int(Nx/2),:]
-    # j_b_x = data.j_b[iteration][Axis.X][int(Nx/2)]
-    # j_b_y = data.j_b[iteration][Axis.Y][int(Ny/2)]
+    plot_streamplot(p.fig, p.ax[0][0], d.x_flat, d.y_flat, d.j_a_x.T, d.j_a_y.T, 'j_a', 'x', 'y')
+    plot_streamplot(p.fig, p.ax[1][0], d.x_flat, d.y_flat, d.j_b_x.T, d.j_b_y.T, 'j_b', 'x', 'y')
 
-def test_02(data: WData):
-    j_a = data.j_a[-1] # last frame
-    rho_a = data.rho_a[-1] # last frame
+    plot_pseudocolor(p.fig, p.ax[0][1], d.x_flat, d.y_flat, d.j_a_x.T, 'j_a_x', 'x', 'y')
+    plot_pseudocolor(p.fig, p.ax[0][4], d.x_flat, d.y_flat, d.j_a_y.T, 'j_a_y', 'x', 'y')
+    plot_pseudocolor(p.fig, p.ax[1][1], d.x_flat, d.y_flat, d.j_b_x.T, 'j_b_x', 'x', 'y')
+    plot_pseudocolor(p.fig, p.ax[1][4], d.x_flat, d.y_flat, d.j_b_y.T, 'j_b_y', 'x', 'y')
 
-    x = data.xyz[0]
-    sec=int(data.Nxyz[0]/2)
-    j_a = j_a[0,sec,:]      # extract x component of j_a along y axis for x=Nx/2 (center of box)
-    rho_a = rho_a[sec,:]    # extract rho_a along y axis for x=Nx/2 (center of box)
-    vs = np.abs(j_a/rho_a)  # computer velocity (absolute value)
+    plot_crossections_of_2D_data(p.fig, p.ax[0][2], x_crossections_01, d.y_flat, d.j_a_x, lambda data, i: data[i, :], 'j_a_x', 'y', 'j_a_x', lambda x, i: f"j_a_x(x = {x[i]}, y)")
+    plot_crossections_of_2D_data(p.fig, p.ax[0][3], y_crossections_02, d.x_flat, d.j_a_x, lambda data, i: data[:, i], 'j_a_x', 'x', 'j_a_x', lambda y, i: f"j_a_x(x, y = {y[i]})")
 
-    # # interpolate data
-    # vs_int = interp1d(x[:,0], vs, kind='quadratic')
-    # newx=np.linspace(-20,20,200)
+    plot_crossections_of_2D_data(p.fig, p.ax[0][5], x_crossections_02, d.y_flat, d.j_a_y, lambda data, i: data[i, :], 'j_a_y', 'y', 'j_a_y', lambda x, i: f"j_a_y(x = {x[i]}, y)")
+    plot_crossections_of_2D_data(p.fig, p.ax[0][6], y_crossections_01, d.x_flat, d.j_a_y, lambda data, i: data[:, i], 'j_a_y', 'x', 'j_a_y', lambda y, i: f"j_a_y(x, y = {y[i]})")
 
-    # # flow for ideal vortex
-    # r = np.linspace(3,40,100)    # take range [3-40]
-    # vs_ideal = 0.5 / r           # vs=1/2r (m=hbar=1, and factor 2 accounts for Cooper pairs)
+    plot_crossections_of_2D_data(p.fig, p.ax[1][2], x_crossections_01, d.y_flat, d.j_b_x, lambda data, i: data[i, :], 'j_b_x', 'y', 'j_b_x', lambda x, i: f"j_b_x(x = {x[i]}, y)")
+    plot_crossections_of_2D_data(p.fig, p.ax[1][3], y_crossections_02, d.x_flat, d.j_b_x, lambda data, i: data[:, i], 'j_b_x', 'x', 'j_b_x', lambda y, i: f"j_b_x(x, y = {y[i]})")
 
-    # # plot
-    # fig, ax = plt.subplots()
-    # ax.plot(x, vs, 'bo', markersize=3, label='data')
-    # ax.plot(newx, vs_int(newx), 'b', linestyle="-")
-    # ax.plot(r, vs_ideal, color="k", linestyle="--", label=r'$\sim 1/r$')
-    # ax.plot(r*(-1.0), vs_ideal, color="k", linestyle="--")
+    plot_crossections_of_2D_data(p.fig, p.ax[1][5], x_crossections_02, d.y_flat, d.j_b_y, lambda data, i: data[i, :], 'j_b_y', 'y', 'j_b_y', lambda x, i: f"j_b_y(x = {x[i]}, y)")
+    plot_crossections_of_2D_data(p.fig, p.ax[1][6], y_crossections_01, d.x_flat, d.j_b_y, lambda data, i: data[:, i], 'j_b_y', 'x', 'j_b_y', lambda y, i: f"j_b_y(x, y = {y[i]})")
 
-    # ax.set(xlabel='y', ylabel=r'$v(0,y)$')
-    # ax.set_xlim([-20,20])
-    # ax.grid()
-    # plt.legend(loc='upper right')
+    # save plot:
+    p.fig.tight_layout()
+    p.fig.savefig(
+        fname = f"plot_current_density.png",
+        dpi = 300
+    )
 
-    # fig.savefig("velocity.png")
+
+# start:
+
 
 def main() -> int:
     """
@@ -178,7 +307,7 @@ def main() -> int:
     inDir = "/workspace/results/data"
     outDir = "/workspace/results/analysis"
     inFile = inDir + "/st-vortex-recreation-01/sv-ddcc05p00-T0p05.wtxt"
-    data = WData.load(inFile)
+    wdata = WData.load(inFile)
 
     # pprint.pp(vars(data))
     # pprint.pp(data.aliases)
@@ -186,15 +315,11 @@ def main() -> int:
 
     # helpers:
     iteration = -1
-    x_crossection_indices = [20, 30, 40, 50, 60],
-    y_crossection_indices = [20, 30, 40, 50, 60],
 
     # plot:
     plot_current_density(
-        data = data,
-        iteration = iteration,
-        x_crossection_indices = x_crossection_indices,
-        y_crossection_indices = y_crossection_indices,
+        wdata = wdata,
+        iteration = iteration
     )
 
     return 0
