@@ -38,30 +38,41 @@ class ParsedWData(object):
         wdata: WData,
         iteration: int
     ):
-        # data:
-        # - grid:
+        # grid:
 
         self.Nx: int = wdata.Nxyz[Axis.X]
         self.Ny: int = wdata.Nxyz[Axis.Y]
+
         self.dx: float = wdata.dxyz[Axis.X]
         self.dy: float = wdata.dxyz[Axis.Y]
+
         self.x: np.ndarray = wdata.xyz[Axis.X]
         self.y: np.ndarray = wdata.xyz[Axis.Y]
+
         self.x_flat: List[float] = self.x.flatten()
         self.y_flat: List[float] = self.y.flatten()
 
-        # data:
-        # - current density
+        # current density
+        # - WARNING:
+        #   - for matplotlib to display data corectly, wdata.j_<a|b>[<iteration>][<component>] needs to be transposed !!!
+        #
+        #     according to https://gitlab.fizyka.pw.edu.pl/wtools/wdata/-/wikis/Examples/Python-examples#cross-section-of-velocity-field-for-quantum-vortex:
+        #     - wdata.j_a[iteration][Component.X][ Nx/2, :    ] === j_a_x( x = Nx/2, y        )
+        #     - wdata.j_a[iteration][Component.X][ :   , Ny/2 ] === j_a_x( x       , y = Ny/2 )
+        #
+        #     therefore, after transposition:
+        #     - parsed.j_a_x[ :   , Nx/2 ] === (wdata.j_a[iteration][Component.X].T)[ :   , Nx/2 ] === wdata.j_a[iteration][Component.X][ Nx/2, :    ] === j_a_x( x = Nx/2, y        )
+        #     - parsed.j_a_x[ Ny/2, :    ] === (wdata.j_a[iteration][Component.X].T)[ Ny/2, :    ] === wdata.j_a[iteration][Component.X][ :   , Ny/2 ] === j_a_x( x       , y = Ny/2 )
 
-        self.j_a_x: np.memmap = wdata.j_a[iteration][Component.X]
-        self.j_a_y: np.memmap = wdata.j_a[iteration][Component.Y]
+        self.j_a_x: np.memmap = wdata.j_a[iteration][Component.X].T
+        self.j_a_y: np.memmap = wdata.j_a[iteration][Component.Y].T
         self.j_a: np.ndarray = np.column_stack((self.j_a_x, self.j_a_y))
-        self.j_a_magnitude: np.ndarray = np.sqrt(self.j_a_x ** 2 + self.j_a_y ** 2)
+        self.j_a_mag: np.ndarray = np.sqrt(self.j_a_x ** 2 + self.j_a_y ** 2)
 
-        self.j_b_x: np.memmap = wdata.j_b[iteration][Component.X]
-        self.j_b_y: np.memmap = wdata.j_b[iteration][Component.Y]
+        self.j_b_x: np.memmap = wdata.j_b[iteration][Component.X].T
+        self.j_b_y: np.memmap = wdata.j_b[iteration][Component.Y].T
         self.j_b: np.ndarray = np.column_stack((self.j_b_x, self.j_b_y))
-        self.j_b_magnitude: np.ndarray = np.sqrt(self.j_b_x ** 2 + self.j_b_y ** 2)
+        self.j_b_mag: np.ndarray = np.sqrt(self.j_b_x ** 2 + self.j_b_y ** 2)
 
 
 class Plot():
@@ -98,6 +109,19 @@ class Plot():
                 self.ax[i][j] = self.fig.add_subplot(self.gs[i, j])
 
 
+def gen_csecs_indices(
+    half_point: float,
+    csecs_as_precentages_before_half_point: List[float] = [],
+    csecs_as_precentages_after_half_point: List[float] = [],
+) ->List[int]:
+    result: List[float] = []
+    result += [np.ceil(half_point * precentage) for precentage in csecs_as_precentages_before_half_point]
+    result += [half_point]
+    result += [np.floor(half_point * precentage) for precentage in csecs_as_precentages_after_half_point]
+
+    return [int(r) for r in result]
+
+
 def gen_scientific_formatter() -> ticker.Formatter:
     formatter = ticker.ScalarFormatter(useMathText=True)
     formatter.set_scientific(True)
@@ -109,7 +133,7 @@ def gen_scientific_formatter() -> ticker.Formatter:
 # partial plots
 
 
-def plot_streamplot(
+def plot_streamlines(
     fig: matplotlib.figure.Figure,
     ax: matplotlib.axes.Axes,
     x: np_typing.ArrayLike,
@@ -180,10 +204,10 @@ def plot_pseudocolor(
     color_bar.ax.yaxis.set_major_formatter(formatter)
 
 
-def plot_crossections_of_2D_data(
+def plot_cross_sections_of_2d_data(
     fig: matplotlib.figure.Figure,
     ax: matplotlib.axes.Axes,
-    indices: List[int],
+    cross_section_indices: List[int],
     x: np_typing.ArrayLike,
     data: np_typing.ArrayLike,
     gen_data_csec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
@@ -196,17 +220,14 @@ def plot_crossections_of_2D_data(
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
     # Plot data:
-    for i, color in zip(indices, colors):
-        data_csec = gen_data_csec_func(data, i)
-
-        int_x = np.linspace(x[0], x[-1], 200)
-        int_data = interp1d(x, data_csec, kind='quadratic')
+    for i, color in zip(cross_section_indices, colors):
 
         # plot points:
+        data_csec = gen_data_csec_func(data, i)
         ax.plot(
             x,
             data_csec,
-            label=gen_label_data_func(x, i),
+            label=gen_label_data_func(title, x, i),
             marker='o',
             markersize=4,
             linestyle='None',
@@ -214,6 +235,8 @@ def plot_crossections_of_2D_data(
         )
 
         # plot interpolation:
+        int_x = np.linspace(x[0], x[-1], 200)
+        int_data = interp1d(x, data_csec, kind='quadratic')
         ax.plot(
             int_x,
             int_data(int_x),
@@ -244,56 +267,62 @@ def plot_crossections_of_2D_data(
 
 
 def plot_current_density(
-    wdata: WData,
-    iteration: int,
+    data: ParsedWData,
     out_dir: str,
 ) -> None:
-    # parse WData:
-    d = ParsedWData(wdata, iteration)
-
-    # gen plot:
     p = Plot(
         cols_w_ratios = [1, 1, 1],
-        rows_h_ratios = [1, 1, 1, 1, 1, 1],
+        rows_h_ratios = [1, 1, 1, 1, 1, 1, 1, 1],
         subplot_w = 10,
         subplot_h = 10,
     )
 
-    # plot:
-    # - WARNING: for matplotlib to display data, p.j_*_* needs to be transposed !!!
-    #     according to https://gitlab.fizyka.pw.edu.pl/wtools/wdata/-/wikis/Examples/Python-examples#cross-section-of-velocity-field-for-quantum-vortex:
-    #     - wdata.j_a[iteration][Component.X][ Nx/2, :    ] === j_a_x( x = Nx/2, y        )
-    #     - wdata.j_a[iteration][Component.X][ :   , Ny/2 ] === j_a_x( x       , y = Ny/2 )
-    nx_half = int(d.Nx/2)
-    ny_half = int(d.Ny/2)
-    x_crossections_01 = [nx_half - 10, nx_half - 5, nx_half - 2, nx_half]
-    x_crossections_02 = [nx_half - 10, nx_half - 5, nx_half - 2, nx_half, nx_half + 2, nx_half + 5, nx_half + 10]
-    y_crossections_01 = [ny_half - 10, ny_half - 5, ny_half - 2, ny_half]
-    y_crossections_02 = [ny_half - 10, ny_half - 5, ny_half - 2, ny_half, ny_half + 2, ny_half + 5, ny_half + 10]
+    x_csecs_00 = gen_csecs_indices(data.Nx/2)
+    x_csecs_01 = gen_csecs_indices(data.Nx/2, [0.75, 0.875, 0.95])
+    x_csecs_02 = gen_csecs_indices(data.Nx/2, [0.75, 0.875, 0.95], [1.05, 1.125, 1.25])
 
-    plot_streamplot(p.fig, p.ax[0][0], d.x_flat, d.y_flat, d.j_a_x.T, d.j_a_y.T, 'j_a', 'x', 'y')
-    plot_pseudocolor(p.fig, p.ax[0][1], d.x_flat, d.y_flat, d.j_a_magnitude.T, '|| j_a ||', 'x', 'y')
+    y_csecs_00 = gen_csecs_indices(data.Ny/2)
+    y_csecs_01 = gen_csecs_indices(data.Ny/2, [0.75, 0.875, 0.95])
+    y_csecs_02 = gen_csecs_indices(data.Ny/2, [0.75, 0.875, 0.95], [1.05, 1.125, 1.25])
 
-    plot_pseudocolor(p.fig, p.ax[1][0], d.x_flat, d.y_flat, d.j_a_x.T, 'j_a_x', 'x', 'y')
-    plot_crossections_of_2D_data(p.fig, p.ax[1][1], x_crossections_01, d.y_flat, d.j_a_x, lambda data, i: data[i, :], 'j_a_x', 'y', 'j_a_x', lambda x, i: f"j_a_x(x = {x[i]}, y)")
-    plot_crossections_of_2D_data(p.fig, p.ax[1][2], y_crossections_02, d.x_flat, d.j_a_x, lambda data, i: data[:, i], 'j_a_x', 'x', 'j_a_x', lambda y, i: f"j_a_x(x, y = {y[i]})")
+    get_data_x_csec = lambda data, x: data[:, x]
+    get_data_y_csec = lambda data, y: data[y, :]
 
-    plot_pseudocolor(p.fig, p.ax[2][0], d.x_flat, d.y_flat, d.j_a_y.T, 'j_a_y', 'x', 'y')
-    plot_crossections_of_2D_data(p.fig, p.ax[2][1], x_crossections_02, d.y_flat, d.j_a_y, lambda data, i: data[i, :], 'j_a_y', 'y', 'j_a_y', lambda x, i: f"j_a_y(x = {x[i]}, y)")
-    plot_crossections_of_2D_data(p.fig, p.ax[2][2], y_crossections_01, d.x_flat, d.j_a_y, lambda data, i: data[:, i], 'j_a_y', 'x', 'j_a_y', lambda y, i: f"j_a_y(x, y = {y[i]})")
+    get_data_x_csec_label = lambda title, x, i: f"{title}(x = {x[i]}, y)"
+    get_data_y_csec_label = lambda title, y, i: f"{title}(x, y = {y[i]})"
 
-    plot_streamplot(p.fig, p.ax[3][0], d.x_flat, d.y_flat, d.j_b_x.T, d.j_b_y.T, 'j_b', 'x', 'y')
-    plot_pseudocolor(p.fig, p.ax[3][1], d.x_flat, d.y_flat, d.j_b_magnitude.T, '|| j_b ||', 'x', 'y')
+    # plot data:
 
-    plot_pseudocolor(p.fig, p.ax[4][0], d.x_flat, d.y_flat, d.j_b_x.T, 'j_b_x', 'x', 'y')
-    plot_crossections_of_2D_data(p.fig, p.ax[4][1], x_crossections_01, d.y_flat, d.j_b_x, lambda data, i: data[i, :], 'j_b_x', 'y', 'j_b_x', lambda x, i: f"j_b_x(x = {x[i]}, y)")
-    plot_crossections_of_2D_data(p.fig, p.ax[4][2], y_crossections_02, d.x_flat, d.j_b_x, lambda data, i: data[:, i], 'j_b_x', 'x', 'j_b_x', lambda y, i: f"j_b_x(x, y = {y[i]})")
+    plot_streamlines(p.fig, p.ax[0][1], data.x_flat, data.y_flat, data.j_a_x, data.j_a_y, 'j_a', 'x', 'y')
 
-    plot_pseudocolor(p.fig, p.ax[5][0], d.x_flat, d.y_flat, d.j_b_y.T, 'j_b_y', 'x', 'y')
-    plot_crossections_of_2D_data(p.fig, p.ax[5][1], x_crossections_02, d.y_flat, d.j_b_y, lambda data, i: data[i, :], 'j_b_y', 'y', 'j_b_y', lambda x, i: f"j_b_y(x = {x[i]}, y)")
-    plot_crossections_of_2D_data(p.fig, p.ax[5][2], y_crossections_01, d.x_flat, d.j_b_y, lambda data, i: data[:, i], 'j_b_y', 'x', 'j_b_y', lambda y, i: f"j_b_y(x, y = {y[i]})")
+    plot_pseudocolor(p.fig, p.ax[1][0], data.x_flat, data.y_flat, data.j_a_mag, '||j_a||', 'x', 'y')
+    plot_cross_sections_of_2d_data(p.fig, p.ax[1][1], y_csecs_00, data.x_flat, data.j_a_mag, get_data_y_csec, '||j_a||', 'x', '||j_a||', get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[1][2], x_csecs_00, data.y_flat, data.j_a_mag, get_data_x_csec, '||j_a||', 'y', '||j_a||', get_data_x_csec_label)
+
+    plot_pseudocolor(p.fig, p.ax[2][0], data.x_flat, data.y_flat, data.j_a_x, 'j_a_x', 'x', 'y')
+    plot_cross_sections_of_2d_data(p.fig, p.ax[2][1], y_csecs_02, data.x_flat, data.j_a_x, get_data_y_csec, 'j_a_x', 'x', 'j_a_x', get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[2][2], x_csecs_01, data.y_flat, data.j_a_x, get_data_x_csec, 'j_a_x', 'y', 'j_a_x', get_data_x_csec_label)
+
+    plot_pseudocolor(p.fig, p.ax[3][0], data.x_flat, data.y_flat, data.j_a_y, 'j_a_y', 'x', 'y')
+    plot_cross_sections_of_2d_data(p.fig, p.ax[3][1], y_csecs_01, data.x_flat, data.j_a_y, get_data_y_csec, 'j_a_y', 'x', 'j_a_y', get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[3][2], x_csecs_02, data.y_flat, data.j_a_y, get_data_x_csec, 'j_a_y', 'y', 'j_a_y', get_data_x_csec_label)
+
+    plot_streamlines(p.fig, p.ax[4][1], data.x_flat, data.y_flat, data.j_b_x, data.j_b_y, 'j_b', 'x', 'y')
+
+    plot_pseudocolor(p.fig, p.ax[5][0], data.x_flat, data.y_flat, data.j_b_mag, '||j_b||', 'x', 'y')
+    plot_cross_sections_of_2d_data(p.fig, p.ax[5][1], y_csecs_00, data.x_flat, data.j_b_mag, get_data_y_csec, '||j_b||', 'x', '||j_b||', get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[5][2], x_csecs_00, data.y_flat, data.j_b_mag, get_data_x_csec, '||j_b||', 'y', '||j_b||', get_data_x_csec_label)
+
+    plot_pseudocolor(p.fig, p.ax[6][0], data.x_flat, data.y_flat, data.j_b_x, 'j_b_x', 'x', 'y')
+    plot_cross_sections_of_2d_data(p.fig, p.ax[6][1], y_csecs_02, data.x_flat, data.j_b_x, get_data_y_csec, 'j_b_x', 'x', 'j_b_x', get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[6][2], x_csecs_01, data.y_flat, data.j_b_x, get_data_x_csec, 'j_b_x', 'y', 'j_b_x', get_data_x_csec_label)
+
+    plot_pseudocolor(p.fig, p.ax[7][0], data.x_flat, data.y_flat, data.j_b_y, 'j_b_y', 'x', 'y')
+    plot_cross_sections_of_2d_data(p.fig, p.ax[7][1], y_csecs_01, data.x_flat, data.j_b_y, get_data_y_csec, 'j_b_y', 'x', 'j_b_y', get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[7][2], x_csecs_02, data.y_flat, data.j_b_y, get_data_x_csec, 'j_b_y', 'y', 'j_b_y', get_data_x_csec_label)
 
     # save plot:
+
     p.fig.tight_layout()
     p.fig.savefig(
         fname = out_dir + "/plot_current_density.png",
@@ -310,25 +339,20 @@ def main() -> int:
     """
 
     in_dir = "/workspace/results/data"
-    out_dir = "/workspace/results/analysis"
     in_file = in_dir + "/st-vortex-recreation-01/sv-ddcc05p00-T0p05.wtxt"
     wdata = WData.load(in_file)
+    parsed = ParsedWData(wdata, iteration=-1)
 
-    # pprint.pp(vars(data))
-    # pprint.pp(data.aliases)
-    # pprint.pp(data.constants)
-
-    # helpers:
-    iteration = -1
+    out_dir = "/workspace/results/analysis"
 
     # plot:
     plot_current_density(
-        wdata = wdata,
-        iteration = iteration,
+        data = parsed,
         out_dir = out_dir
     )
 
     return 0
+
 
 if __name__ == '__main__':
     # Execute when the module is not initialized from an import statement.
