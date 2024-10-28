@@ -23,7 +23,7 @@
     to ssh into the container via the console
 
 - from within the container:\
-  `/opt/python/3.12/venv/bin/python3 /workspace/app/src/start.py`
+  `/opt/python/3.12/venv/bin/python3.12 /workspace/app/src/start.py`
 
 ---
 
