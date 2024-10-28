@@ -22,7 +22,7 @@
   - `npm run dev_exec_analysis`\
     to ssh into the container via the console
 
-- in the container:
+- from within the container:\
   `/opt/python/3.12/venv/bin/python3 /workspace/app/src/start.py`
 
 ---
