@@ -43,6 +43,9 @@ class ParsedWData(object):
         self.Nx: int = wdata.Nxyz[Axis.X]
         self.Ny: int = wdata.Nxyz[Axis.Y]
 
+        self.Nx_half: int = int(self.Nx/2)
+        self.Ny_half: int = int(self.Ny/2)
+
         self.dx: float = wdata.dxyz[Axis.X]
         self.dy: float = wdata.dxyz[Axis.Y]
 
@@ -52,61 +55,204 @@ class ParsedWData(object):
         self.x_flat: List[float] = self.x.flatten()
         self.y_flat: List[float] = self.y.flatten()
 
-        # current density
-        # - WARNING:
-        #   - for matplotlib to display data corectly, wdata.j_<a|b>[<iteration>][<component>] needs to be transposed !!!
+        # rho (x,y)
+        # - normal density (x,y)
         #
-        #     according to https://gitlab.fizyka.pw.edu.pl/wtools/wdata/-/wikis/Examples/Python-examples#cross-section-of-velocity-field-for-quantum-vortex:
+        # - NOTE:
+        #   - according to https://gitlab.fizyka.pw.edu.pl/wtools/wdata/-/wikis/Examples/Python-examples#cross-section-of-velocity-field-for-quantum-vortex:
+        #     - wdata.rho_a[iteration][ Nx/2, :    ] === rho_a( x = Nx/2, y        )
+        #     - wdata.rho_a[iteration][ :   , Ny/2 ] === rho_a( x       , y = Ny/2 )
+
+        self.rho_a: np.memmap = wdata.rho_a[iteration]
+        self.rho_b: np.memmap = wdata.rho_b[iteration]
+        self.rho_tot: np.memmap = self.rho_a + self.rho_b
+
+        # delta (x,y)
+        # - pairing gap function (x,y)
+        #
+        # - NOTE:
+        #   - according to https://gitlab.fizyka.pw.edu.pl/wtools/wdata/-/wikis/Examples/Python-examples#cross-section-of-velocity-field-for-quantum-vortex:
+        #     - wdata.delta[iteration][ Nx/2, :    ] === delta( x = Nx/2, y        )
+        #     - wdata.delta[iteration][ :   , Ny/2 ] === delta( x       , y = Ny/2 )
+
+        self.delta = wdata.delta[iteration]
+        self.delta_norm = np.abs(self.delta)
+
+        # j (x,y)
+        # - current density (x,y)
+        #
+        # - WARNING:
+        #   - in sone places j needs to be transposed !!!
+        #
+        # - NOTE:
+        #   - according to https://gitlab.fizyka.pw.edu.pl/wtools/wdata/-/wikis/Examples/Python-examples#cross-section-of-velocity-field-for-quantum-vortex:
         #     - wdata.j_a[iteration][Component.X][ Nx/2, :    ] === j_a_x( x = Nx/2, y        )
         #     - wdata.j_a[iteration][Component.X][ :   , Ny/2 ] === j_a_x( x       , y = Ny/2 )
-        #
-        #     therefore, after transposition:
-        #     - parsed.j_a_x[ :   , Nx/2 ] === (wdata.j_a[iteration][Component.X].T)[ :   , Nx/2 ] === wdata.j_a[iteration][Component.X][ Nx/2, :    ] === j_a_x( x = Nx/2, y        )
-        #     - parsed.j_a_x[ Ny/2, :    ] === (wdata.j_a[iteration][Component.X].T)[ Ny/2, :    ] === wdata.j_a[iteration][Component.X][ :   , Ny/2 ] === j_a_x( x       , y = Ny/2 )
 
-        self.j_a_x: np.memmap = wdata.j_a[iteration][Component.X].T
-        self.j_a_y: np.memmap = wdata.j_a[iteration][Component.Y].T
+        self.j_a_x: np.memmap = wdata.j_a[iteration][Component.X]
+        self.j_a_y: np.memmap = wdata.j_a[iteration][Component.Y]
         self.j_a: np.ndarray = np.column_stack((self.j_a_x, self.j_a_y))
-        self.j_a_mag: np.ndarray = np.sqrt(self.j_a_x ** 2 + self.j_a_y ** 2)
+        self.j_a_norm: np.ndarray = np.sqrt(self.j_a_x ** 2 + self.j_a_y ** 2)
 
-        self.j_b_x: np.memmap = wdata.j_b[iteration][Component.X].T
-        self.j_b_y: np.memmap = wdata.j_b[iteration][Component.Y].T
+        self.j_b_x: np.memmap = wdata.j_b[iteration][Component.X]
+        self.j_b_y: np.memmap = wdata.j_b[iteration][Component.Y]
         self.j_b: np.ndarray = np.column_stack((self.j_b_x, self.j_b_y))
-        self.j_b_mag: np.ndarray = np.sqrt(self.j_b_x ** 2 + self.j_b_y ** 2)
+        self.j_b_norm: np.ndarray = np.sqrt(self.j_b_x ** 2 + self.j_b_y ** 2)
+
+        self.j_tot_x: np.memmap = self.j_a_x + self.j_b_x
+        self.j_tot_y: np.memmap = self.j_a_y + self.j_b_y
+        self.j_tot: np.ndarray = np.column_stack((self.j_tot_x, self.j_tot_y))
+        self.j_tot_norm: np.ndarray = np.sqrt(self.j_tot_x ** 2 + self.j_tot_y ** 2)
+
+        #
+        # NOTE:
+        # - vortex core lies in the center of the grid at cords [ x[Nx/2], y[Ny/2] ] == [40, 40]
+        # - therefore assuming vortex bulk spans a circle with r == x[Nx/4] == y[Ny/4] == 20
+        #
+
+        bulk_radius = self.Nx_half / 2
+        epsilon = 0.01
+
+        # rho vortex (x = 0, y = 0)
+        # - (total) normal density at the center of the vortex core
+
+        self.rho_v: float = self.rho_tot[self.Nx_half, self.Ny_half]
+
+        # rho 0 (x > rv, y > rv)
+        # - (total) normal density far from the center of the vortex core
+        # - bulk (total) normal density
+
+        self.rho_tot_0: float = self.__calc_arithmetic_mean_over_circle(
+            self.x_flat,
+            self.y_flat,
+            self.rho_tot,
+            bulk_radius,
+            epsilon
+        )
+        self.rho_a_0: float = self.__calc_arithmetic_mean_over_circle(
+            self.x_flat,
+            self.y_flat,
+            self.rho_a,
+            bulk_radius,
+            epsilon
+        )
+        self.rho_b_0: float = self.__calc_arithmetic_mean_over_circle(
+            self.x_flat,
+            self.y_flat,
+            self.rho_b,
+            bulk_radius,
+            epsilon
+        )
+
+        # delta 0 (x > rv, y > rv)
+        # - pairing gap function far from the center of the vortex core
+        # - bulk pairing gap function
+
+        self.delta_norm_0: float = self.__calc_arithmetic_mean_over_circle(
+            self.x_flat,
+            self.y_flat,
+            self.delta_norm,
+            bulk_radius,
+            epsilon
+        )
+
+        # j 0 (x > rv, y > rv)
+        # - (total) current density far from the center of the vortex core
+        # - bulk (total) current density
+
+        self.j_a_norm_0: float = self.__calc_arithmetic_mean_over_circle(
+            self.x_flat,
+            self.y_flat,
+            self.j_a_norm,
+            bulk_radius,
+            epsilon
+        )
+        self.j_a_norm_0: float = self.__calc_arithmetic_mean_over_circle(
+            self.x_flat,
+            self.y_flat,
+            self.j_b_norm,
+            bulk_radius,
+            epsilon
+        )
+        self.j_tot_norm_0: float = self.__calc_arithmetic_mean_over_circle(
+            self.x_flat,
+            self.y_flat,
+            self.j_tot_norm,
+            bulk_radius,
+            epsilon
+        )
+
+
+    def __calc_arithmetic_mean_over_circle(
+        self,
+        x: List[float],
+        y: List[float],
+        data: np.ndarray,
+        R: float,
+        epsilon: float
+    ):
+        # Check which indices lie on a circle with radius R, with precision epsilon:
+        indices = []
+        for i in range(0, len(x)):
+            for j in range(0, len(y)):
+                r = np.sqrt(x[i] ** 2 + y[j] ** 2)
+
+                if np.abs(r - R) <= epsilon:
+                    indices.append([i, j])
+
+        # calc data's arithmetic mean value on the circle:
+        result = 0
+        for i, j in indices:
+            # print (f"{x[i]}, {y[j]} ---> r = {np.sqrt(x[i] ** 2 + y[j] ** 2)}")
+            result += data[i, j]
+        result /= len(indices)
+
+        return result
 
 
 class Plot():
     def __init__(
         self,
-        rows_h_ratios: List[int],
-        cols_w_ratios: List[int],
         subplot_h: int,
         subplot_w: int,
+        rows_h_ratios: List[int],
+        cols_w_ratios: List[int],
+        ignore_subplots: List[List[int]] = []
     ):
         # plot's width and height:
+
         self.subplot_h: float = subplot_h
         self.subplot_w: float = subplot_w
+
         self.nrows: float = len(rows_h_ratios)
         self.ncols: float = len(cols_w_ratios)
+
         self.rows_h_ratios: List[float] = rows_h_ratios
         self.cols_w_ratios: List[float] = cols_w_ratios
-        self.h: float = np.sum([self.subplot_h * ratio for ratio in (self.rows_h_ratios / np.max(self.rows_h_ratios))])
-        self.w: float = np.sum([self.subplot_w * ratio for ratio in (self.cols_w_ratios / np.max(self.cols_w_ratios))])
+
+        self.h: float = np.sum(self.subplot_h * np.array(self.rows_h_ratios) / np.max(self.rows_h_ratios))
+        self.w: float = np.sum(self.subplot_w * np.array(self.cols_w_ratios) / np.max(self.cols_w_ratios))
 
         # create plot and subplots:
+
         self.fig = plt.figure(
             figsize = (self.w, self.h)
         )
+
         self.gs = gridspec.GridSpec(
             nrows = self.nrows,
             ncols = self.ncols,
             height_ratios = self.rows_h_ratios,
             width_ratios  = self.cols_w_ratios,
         )
+
+        self.ignored_subplots: List[List[int]] = ignore_subplots
+
         self.ax: List[List[matplotlib.axes.Axes]] = [[None for _ in range(self.ncols)] for _ in range(self.nrows)]
         for i in range(0, self.nrows):
             for j in range(0, self.ncols):
-                self.ax[i][j] = self.fig.add_subplot(self.gs[i, j])
+                if [i, j] not in self.ignored_subplots:
+                    self.ax[i][j] = self.fig.add_subplot(self.gs[i, j])
 
 
 def gen_csecs_indices(
@@ -114,12 +260,19 @@ def gen_csecs_indices(
     csecs_as_precentages_before_half_point: List[float] = [],
     csecs_as_precentages_after_half_point: List[float] = [],
 ) ->List[int]:
-    result: List[float] = []
-    result += [np.ceil(half_point * precentage) for precentage in csecs_as_precentages_before_half_point]
-    result += [half_point]
-    result += [np.floor(half_point * precentage) for precentage in csecs_as_precentages_after_half_point]
+    return [
+        int(i) for i in [
+            np.ceil(half_point * precentage) for precentage in csecs_as_precentages_before_half_point
+        ] + [
+            half_point
+        ] + [
+            np.floor(half_point * precentage) for precentage in csecs_as_precentages_after_half_point
+        ]
+    ]
 
-    return [int(r) for r in result]
+
+def gen_default_color_cycle() -> List[str]:
+    return plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
 
 def gen_scientific_formatter() -> ticker.Formatter:
@@ -130,7 +283,54 @@ def gen_scientific_formatter() -> ticker.Formatter:
     return formatter
 
 
-# partial plots
+# basic plots
+
+
+def plot_vectors(
+    fig: matplotlib.figure.Figure,
+    ax: matplotlib.axes.Axes,
+    x: np_typing.ArrayLike,
+    y: np_typing.ArrayLike,
+    data_x: np_typing.ArrayLike,
+    data_y: np_typing.ArrayLike,
+    stride: int,
+    scale: float,
+    title: str,
+    label_x: str,
+    label_y: str,
+) -> None:
+    # Create meshgrid
+    # - redefines x and y as 2d arrays becasue; x and y argunets are 1d arrays while data_x and data_y are 2d arrays
+    grid_x, grid_y = np.meshgrid(x, y)
+
+    # Apply slicing to reduce vector density
+    sliced_x = grid_x[::stride, ::stride]
+    sliced_y = grid_y[::stride, ::stride]
+    sliced_u = data_x[::stride, ::stride]
+    sliced_v = data_y[::stride, ::stride]
+
+    # The default color cycle
+    colors = gen_default_color_cycle()[0:3]
+
+    # Plot data:
+    ax.quiver(sliced_x, sliced_y, sliced_u, sliced_v, angles='xy', scale_units='xy', scale=scale, color=colors)
+
+    # Labels
+    ax.set_title(title)
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
+
+    # Axis limits
+    ax.set_xlim(np.min(x), np.max(x))
+    ax.set_ylim(np.min(y), np.max(y))
+
+    # Aspect ratio
+    ax.set_aspect('equal', adjustable='box')
+
+    # Grid lines
+    ax.grid()
+    ax.axhline(0, color='grey', lw=0.5)
+    ax.axvline(0, color='grey', lw=0.5)
 
 
 def plot_streamlines(
@@ -144,8 +344,11 @@ def plot_streamlines(
     label_x: str,
     label_y: str,
 ) -> None:
+    # The default color cycle
+    color = gen_default_color_cycle()[0]
+
     # Plot data:
-    ax.streamplot(x, y, data_x, data_y, color='blue', linewidth=2, density=1.5)
+    ax.streamplot(x, y, data_x, data_y, color=color, linewidth=1, density=1.5)
 
     # Labels
     ax.set_title(title)
@@ -156,8 +359,13 @@ def plot_streamlines(
     ax.set_xlim(np.min(x), np.max(x))
     ax.set_ylim(np.min(y), np.max(y))
 
-    # # Aspect ratio:
-    # ax.set_aspect('equal', adjustable='box')
+    # Grid lines
+    ax.grid()
+    ax.axhline(0, color='grey', lw=0.5)
+    ax.axvline(0, color='grey', lw=0.5)
+
+    # Aspect ratio:
+    ax.set_aspect('equal', adjustable='box')
 
 
 def plot_pseudocolor(
@@ -182,8 +390,13 @@ def plot_pseudocolor(
     ax.set_xlim(np.min(x), np.max(x))
     ax.set_ylim(np.min(y), np.max(y))
 
-    # # Aspect ratio:
-    # ax.set_aspect('equal', adjustable='box')
+    # # Grid lines
+    # ax.grid()
+    # ax.axhline(0, color='grey', lw=0.5)
+    # ax.axvline(0, color='grey', lw=0.5)
+
+    # Aspect ratio:
+    ax.set_aspect('equal', adjustable='box')
 
     # Add color bar
     color_bar = fig.colorbar(
@@ -204,6 +417,9 @@ def plot_pseudocolor(
     color_bar.ax.yaxis.set_major_formatter(formatter)
 
 
+# basic plots tailored to data
+
+
 def plot_cross_sections_of_2d_data(
     fig: matplotlib.figure.Figure,
     ax: matplotlib.axes.Axes,
@@ -214,10 +430,11 @@ def plot_cross_sections_of_2d_data(
     title: str,
     label_x: str,
     label_y: str,
-    gen_label_data_func: Callable[[np_typing.ArrayLike, int], str],
+    labe_legend: str,
+    gen_legend_label_func: Callable[[np_typing.ArrayLike, int], str],
 ) -> None:
     # The default color cycle
-    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    colors = gen_default_color_cycle()
 
     # Plot data:
     for i, color in zip(cross_section_indices, colors):
@@ -227,7 +444,7 @@ def plot_cross_sections_of_2d_data(
         ax.plot(
             x,
             data_csec,
-            label=gen_label_data_func(title, x, i),
+            label=gen_legend_label_func(labe_legend, x, i),
             marker='o',
             markersize=4,
             linestyle='None',
@@ -254,6 +471,14 @@ def plot_cross_sections_of_2d_data(
     ax.set_xlim(1.05 * np.min(x), 1.05 * np.max(x))
     ax.set_ylim(1.05 * np.min(data), 1.05 * np.max(data))
 
+    # Grid lines
+    ax.grid()
+    ax.axhline(0, color='grey', lw=0.5)
+    ax.axvline(0, color='grey', lw=0.5)
+
+    # # Aspect ratio:
+    # ax.set_aspect('equal', adjustable='box')
+
     # Scientific notation
     formatter = gen_scientific_formatter()
     ax.xaxis.set_major_formatter(formatter)
@@ -266,68 +491,290 @@ def plot_cross_sections_of_2d_data(
 # plot systen properties:
 
 
-def plot_current_density(
-    data: ParsedWData,
-    out_dir: str,
+def plot_normal_density(
+    out_file: str,
+    dpi: int,
+
+    subplot_w: int,
+    subplot_h: int,
+
+    Nx: int,
+    Ny: int,
+
+    x: List[float],
+    y: List[float],
+
+    rho_tot: np.ndarray,
+    rho_a: np.ndarray,
+    rho_b: np.ndarray,
+
+    title_rho_tot: str,
+    title_rho_a: str,
+    title_rho_b: str,
+
+    lable_x: str,
+    lable_y: str,
+
+    lable_rho_tot: str,
+    lable_rho_a: str,
+    lable_rho_b: str,
+
+    legend_rho_tot: str,
+    legend_rho_a: str,
+    legend_rho_b: str,
+
 ) -> None:
     p = Plot(
+        subplot_w = subplot_w,
+        subplot_h = subplot_h,
         cols_w_ratios = [1, 1, 1],
-        rows_h_ratios = [1, 1, 1, 1, 1, 1, 1, 1],
-        subplot_w = 10,
-        subplot_h = 10,
+        rows_h_ratios = [1, 1, 1],
     )
 
-    x_csecs_00 = gen_csecs_indices(data.Nx/2)
-    x_csecs_01 = gen_csecs_indices(data.Nx/2, [0.75, 0.875, 0.95])
-    x_csecs_02 = gen_csecs_indices(data.Nx/2, [0.75, 0.875, 0.95], [1.05, 1.125, 1.25])
+    x_csecs_00 = gen_csecs_indices(Nx/2)
+    y_csecs_00 = gen_csecs_indices(Ny/2)
 
-    y_csecs_00 = gen_csecs_indices(data.Ny/2)
-    y_csecs_01 = gen_csecs_indices(data.Ny/2, [0.75, 0.875, 0.95])
-    y_csecs_02 = gen_csecs_indices(data.Ny/2, [0.75, 0.875, 0.95], [1.05, 1.125, 1.25])
+    get_data_x_csec = lambda data, x: data[x, :]
+    get_data_y_csec = lambda data, y: data[:, y]
 
-    get_data_x_csec = lambda data, x: data[:, x]
-    get_data_y_csec = lambda data, y: data[y, :]
-
-    get_data_x_csec_label = lambda title, x, i: f"{title}(x = {x[i]}, y)"
-    get_data_y_csec_label = lambda title, y, i: f"{title}(x, y = {y[i]})"
+    get_data_x_csec_label = lambda legend, x, i: f"{legend}(x = {x[i]}, y)"
+    get_data_y_csec_label = lambda legend, y, i: f"{legend}(x, y = {y[i]})"
 
     # plot data:
+    # - rho
 
-    plot_streamlines(p.fig, p.ax[0][1], data.x_flat, data.y_flat, data.j_a_x, data.j_a_y, 'j_a', 'x', 'y')
+    plot_pseudocolor(p.fig, p.ax[0][0], x, y, rho_tot, title_rho_tot, lable_x, lable_y)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[0][1], y_csecs_00, x, rho_tot, get_data_y_csec, title_rho_tot, lable_x, lable_rho_tot, legend_rho_tot, get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[0][2], x_csecs_00, y, rho_tot, get_data_x_csec, title_rho_tot, lable_y, lable_rho_tot, legend_rho_tot, get_data_x_csec_label)
 
-    plot_pseudocolor(p.fig, p.ax[1][0], data.x_flat, data.y_flat, data.j_a_mag, '||j_a||', 'x', 'y')
-    plot_cross_sections_of_2d_data(p.fig, p.ax[1][1], y_csecs_00, data.x_flat, data.j_a_mag, get_data_y_csec, '||j_a||', 'x', '||j_a||', get_data_y_csec_label)
-    plot_cross_sections_of_2d_data(p.fig, p.ax[1][2], x_csecs_00, data.y_flat, data.j_a_mag, get_data_x_csec, '||j_a||', 'y', '||j_a||', get_data_x_csec_label)
+    plot_pseudocolor(p.fig, p.ax[1][0], x, y, rho_a, title_rho_a, lable_x, lable_y)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[1][1], y_csecs_00, x, rho_a, get_data_y_csec, title_rho_a, lable_x, lable_rho_a, legend_rho_a, get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[1][2], x_csecs_00, y, rho_a, get_data_x_csec, title_rho_a, lable_y, lable_rho_a, legend_rho_a, get_data_x_csec_label)
 
-    plot_pseudocolor(p.fig, p.ax[2][0], data.x_flat, data.y_flat, data.j_a_x, 'j_a_x', 'x', 'y')
-    plot_cross_sections_of_2d_data(p.fig, p.ax[2][1], y_csecs_02, data.x_flat, data.j_a_x, get_data_y_csec, 'j_a_x', 'x', 'j_a_x', get_data_y_csec_label)
-    plot_cross_sections_of_2d_data(p.fig, p.ax[2][2], x_csecs_01, data.y_flat, data.j_a_x, get_data_x_csec, 'j_a_x', 'y', 'j_a_x', get_data_x_csec_label)
-
-    plot_pseudocolor(p.fig, p.ax[3][0], data.x_flat, data.y_flat, data.j_a_y, 'j_a_y', 'x', 'y')
-    plot_cross_sections_of_2d_data(p.fig, p.ax[3][1], y_csecs_01, data.x_flat, data.j_a_y, get_data_y_csec, 'j_a_y', 'x', 'j_a_y', get_data_y_csec_label)
-    plot_cross_sections_of_2d_data(p.fig, p.ax[3][2], x_csecs_02, data.y_flat, data.j_a_y, get_data_x_csec, 'j_a_y', 'y', 'j_a_y', get_data_x_csec_label)
-
-    plot_streamlines(p.fig, p.ax[4][1], data.x_flat, data.y_flat, data.j_b_x, data.j_b_y, 'j_b', 'x', 'y')
-
-    plot_pseudocolor(p.fig, p.ax[5][0], data.x_flat, data.y_flat, data.j_b_mag, '||j_b||', 'x', 'y')
-    plot_cross_sections_of_2d_data(p.fig, p.ax[5][1], y_csecs_00, data.x_flat, data.j_b_mag, get_data_y_csec, '||j_b||', 'x', '||j_b||', get_data_y_csec_label)
-    plot_cross_sections_of_2d_data(p.fig, p.ax[5][2], x_csecs_00, data.y_flat, data.j_b_mag, get_data_x_csec, '||j_b||', 'y', '||j_b||', get_data_x_csec_label)
-
-    plot_pseudocolor(p.fig, p.ax[6][0], data.x_flat, data.y_flat, data.j_b_x, 'j_b_x', 'x', 'y')
-    plot_cross_sections_of_2d_data(p.fig, p.ax[6][1], y_csecs_02, data.x_flat, data.j_b_x, get_data_y_csec, 'j_b_x', 'x', 'j_b_x', get_data_y_csec_label)
-    plot_cross_sections_of_2d_data(p.fig, p.ax[6][2], x_csecs_01, data.y_flat, data.j_b_x, get_data_x_csec, 'j_b_x', 'y', 'j_b_x', get_data_x_csec_label)
-
-    plot_pseudocolor(p.fig, p.ax[7][0], data.x_flat, data.y_flat, data.j_b_y, 'j_b_y', 'x', 'y')
-    plot_cross_sections_of_2d_data(p.fig, p.ax[7][1], y_csecs_01, data.x_flat, data.j_b_y, get_data_y_csec, 'j_b_y', 'x', 'j_b_y', get_data_y_csec_label)
-    plot_cross_sections_of_2d_data(p.fig, p.ax[7][2], x_csecs_02, data.y_flat, data.j_b_y, get_data_x_csec, 'j_b_y', 'y', 'j_b_y', get_data_x_csec_label)
+    plot_pseudocolor(p.fig, p.ax[2][0], x, y, rho_b, title_rho_b, lable_x, lable_y)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[2][1], y_csecs_00, x, rho_b, get_data_y_csec, title_rho_b, lable_x, lable_rho_b, legend_rho_b, get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[2][2], x_csecs_00, y, rho_b, get_data_x_csec, title_rho_b, lable_y, lable_rho_b, legend_rho_b, get_data_x_csec_label)
 
     # save plot:
 
     p.fig.tight_layout()
-    p.fig.savefig(
-        fname = out_dir + "/plot_current_density.png",
-        dpi = 300
+    p.fig.savefig(fname = out_file, dpi = dpi)
+
+
+def plot_pairing_gap_function(
+    out_file: str,
+    dpi: int,
+
+    subplot_w: int,
+    subplot_h: int,
+
+    Nx: int,
+    Ny: int,
+
+    x: List[float],
+    y: List[float],
+
+    delta_norm: np.ndarray,
+
+    title_delta_norm: str,
+
+    lable_x: str,
+    lable_y: str,
+
+    lable_delta_norm: str,
+
+    legend_delta_norm: str,
+
+) -> None:
+    p = Plot(
+        subplot_w = subplot_w,
+        subplot_h = subplot_h,
+        cols_w_ratios = [1, 1, 1],
+        rows_h_ratios = [1],
     )
+
+    x_csecs_00 = gen_csecs_indices(Nx/2)
+    y_csecs_00 = gen_csecs_indices(Ny/2)
+
+    get_data_x_csec = lambda data, x: data[x, :]
+    get_data_y_csec = lambda data, y: data[:, y]
+
+    get_data_x_csec_label = lambda legend, x, i: f"{legend}(x = {x[i]}, y)"
+    get_data_y_csec_label = lambda legend, y, i: f"{legend}(x, y = {y[i]})"
+
+    # plot data:
+    # - delta
+
+    plot_pseudocolor(p.fig, p.ax[0][0], x, y, delta_norm, title_delta_norm, lable_x, lable_y)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[0][1], y_csecs_00, x, delta_norm, get_data_y_csec, title_delta_norm, lable_x, lable_delta_norm, legend_delta_norm, get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[0][2], x_csecs_00, y, delta_norm, get_data_x_csec, title_delta_norm, lable_y, lable_delta_norm, legend_delta_norm, get_data_x_csec_label)
+
+    # save plot:
+
+    p.fig.tight_layout()
+    p.fig.savefig(fname = out_file, dpi = dpi)
+
+
+def plot_current_density(
+    out_file: str,
+    dpi: int,
+
+    subplot_w: int,
+    subplot_h: int,
+
+    Nx: int,
+    Ny: int,
+
+    x: List[float],
+    y: List[float],
+
+    j_tot_norm: np.ndarray,
+    j_tot_x: np.ndarray,
+    j_tot_y: np.ndarray,
+
+    j_a_norm: np.ndarray,
+    j_a_x: np.ndarray,
+    j_a_y: np.ndarray,
+
+    j_b_norm: np.ndarray,
+    j_b_x: np.ndarray,
+    j_b_y: np.ndarray,
+
+    title_j_tot: str,
+    title_j_tot_norm: str,
+    title_j_tot_x: str,
+    title_j_tot_y: str,
+
+    title_j_a: str,
+    title_j_a_norm: str,
+    title_j_a_x: str,
+    title_j_a_y: str,
+
+    title_j_b: str,
+    title_j_b_norm: str,
+    title_j_b_x: str,
+    title_j_b_y: str,
+
+    lable_x: str,
+    lable_y: str,
+
+    label_j_tot_norm: str,
+    label_j_tot_x: str,
+    label_j_tot_y: str,
+
+    label_j_a_norm: str,
+    label_j_a_x: str,
+    label_j_a_y: str,
+
+    label_j_b_norm: str,
+    label_j_b_x: str,
+    label_j_b_y: str,
+
+    legend_j_tot_norm: str,
+    legend_j_tot_x: str,
+    legend_j_tot_y: str,
+
+    legend_j_a_norm: str,
+    legend_j_a_x: str,
+    legend_j_a_y: str,
+
+    legend_j_b_norm: str,
+    legend_j_b_x: str,
+    legend_j_b_y: str,
+
+) -> None:
+    p = Plot(
+        subplot_w = subplot_w,
+        subplot_h = subplot_h,
+        cols_w_ratios = [1, 1, 1],
+        rows_h_ratios = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        ignore_subplots = [
+            [0, 2],
+            [4, 2],
+            [8, 2]
+        ]
+    )
+
+    x_csecs_00 = gen_csecs_indices(Nx/2)
+    x_csecs_01 = gen_csecs_indices(Nx/2, [0.75, 0.875, 0.95])
+    x_csecs_02 = gen_csecs_indices(Nx/2, [0.75, 0.875, 0.95], [1.05, 1.125, 1.25])
+
+    y_csecs_00 = gen_csecs_indices(Ny/2)
+    y_csecs_01 = gen_csecs_indices(Ny/2, [0.75, 0.875, 0.95])
+    y_csecs_02 = gen_csecs_indices(Ny/2, [0.75, 0.875, 0.95], [1.05, 1.125, 1.25])
+
+    get_data_x_csec = lambda data, x: data[x, :]
+    get_data_y_csec = lambda data, y: data[:, y]
+
+    get_data_x_csec_label = lambda legend, x, i: f"{legend}(x = {x[i]}, y)"
+    get_data_y_csec_label = lambda legend, y, i: f"{legend}(x, y = {y[i]})"
+
+    vector_stride = 3
+    vector_scale = 0.0005
+
+    # WARNING:
+    # - for matplotlib to plot 2d plots of density current correctly, in sone places wj_<a|b>[<iteration>][<component>] needs to be transposed !!!
+
+    TRANSPOSE = lambda data: data.T
+
+    # plot data:
+    # - j_total
+
+    plot_vectors(p.fig, p.ax[0][0], x, y, TRANSPOSE(j_tot_x), TRANSPOSE(j_tot_y), vector_stride, vector_scale, title_j_tot, lable_x, lable_y)
+    plot_streamlines(p.fig, p.ax[0][1], x, y, TRANSPOSE(j_tot_x), TRANSPOSE(j_tot_y), title_j_tot, lable_x, lable_y)
+
+    plot_pseudocolor(p.fig, p.ax[1][0], x, y, TRANSPOSE(j_tot_norm), title_j_tot_norm, lable_x, lable_y)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[1][1], y_csecs_00, x, j_tot_norm, get_data_y_csec, title_j_tot_norm, lable_x, label_j_tot_norm, legend_j_tot_norm, get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[1][2], x_csecs_00, y, j_tot_norm, get_data_x_csec, title_j_tot_norm, lable_y, label_j_tot_norm, legend_j_tot_norm, get_data_x_csec_label)
+
+    plot_pseudocolor(p.fig, p.ax[2][0], x, y, TRANSPOSE(j_tot_x), title_j_tot_x, lable_x, lable_y)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[2][1], y_csecs_02, x, j_tot_x, get_data_y_csec, title_j_tot_x, lable_x, label_j_tot_x, legend_j_tot_x, get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[2][2], x_csecs_01, y, j_tot_x, get_data_x_csec, title_j_tot_x, lable_y, label_j_tot_x, legend_j_tot_x, get_data_x_csec_label)
+
+    plot_pseudocolor(p.fig, p.ax[3][0], x, y, TRANSPOSE(j_tot_y), title_j_tot_y, lable_x, lable_y)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[3][1], y_csecs_01, x, j_tot_y, get_data_y_csec, title_j_tot_y, lable_x, label_j_tot_y, legend_j_tot_y, get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[3][2], x_csecs_02, y, j_tot_y, get_data_x_csec, title_j_tot_y, lable_y, label_j_tot_y, legend_j_tot_y, get_data_x_csec_label)
+
+    # plot data:
+    # - j_a
+
+    plot_vectors(p.fig, p.ax[4][0], x, y, TRANSPOSE(j_a_x), TRANSPOSE(j_a_y), vector_stride, vector_scale, title_j_a, lable_x, lable_y)
+    plot_streamlines(p.fig, p.ax[4][1], x, y, TRANSPOSE(j_a_x), TRANSPOSE(j_a_y), title_j_a, lable_x, lable_y)
+
+    plot_pseudocolor(p.fig, p.ax[5][0], x, y, TRANSPOSE(j_a_norm), title_j_a_norm, lable_x, lable_y)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[5][1], y_csecs_00, x, j_a_norm, get_data_y_csec, title_j_a_norm, lable_x, label_j_a_norm, legend_j_a_norm, get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[5][2], x_csecs_00, y, j_a_norm, get_data_x_csec, title_j_a_norm, lable_y, label_j_a_norm, legend_j_a_norm, get_data_x_csec_label)
+
+    plot_pseudocolor(p.fig, p.ax[6][0], x, y, TRANSPOSE(j_a_x), title_j_a_x, lable_x, lable_y)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[6][1], y_csecs_02, x, j_a_x, get_data_y_csec, title_j_a_x, lable_x, label_j_a_x, legend_j_a_x, get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[6][2], x_csecs_01, y, j_a_x, get_data_x_csec, title_j_a_x, lable_y, label_j_a_x, legend_j_a_x, get_data_x_csec_label)
+
+    plot_pseudocolor(p.fig, p.ax[7][0], x, y, TRANSPOSE(j_a_y), title_j_a_y, lable_x, lable_y)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[7][1], y_csecs_01, x, j_a_y, get_data_y_csec, title_j_a_y, lable_x, label_j_a_y, legend_j_a_y, get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[7][2], x_csecs_02, y, j_a_y, get_data_x_csec, title_j_a_y, lable_y, label_j_a_y, legend_j_a_y, get_data_x_csec_label)
+
+    # plot data:
+    # - j_b
+
+    plot_vectors(p.fig, p.ax[8][0], x, y, TRANSPOSE(j_b_x), TRANSPOSE(j_b_y), vector_stride, vector_scale, title_j_b, lable_x, lable_y)
+    plot_streamlines(p.fig, p.ax[8][1], x, y, TRANSPOSE(j_b_x), TRANSPOSE(j_b_y), title_j_b, lable_x, lable_y)
+
+    plot_pseudocolor(p.fig, p.ax[9][0], x, y, TRANSPOSE(j_b_norm), title_j_b_norm, lable_x, lable_y)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[9][1], y_csecs_00, x, j_b_norm, get_data_y_csec, title_j_b_norm, lable_x, label_j_b_norm, legend_j_b_norm, get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[9][2], x_csecs_00, y, j_b_norm, get_data_x_csec, title_j_b_norm, lable_y, label_j_b_norm, legend_j_b_norm, get_data_x_csec_label)
+
+    plot_pseudocolor(p.fig, p.ax[10][0], x, y, TRANSPOSE(j_b_x), title_j_b_x, lable_x, lable_y)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[10][1], y_csecs_02, x, j_b_x, get_data_y_csec, title_j_b_x, lable_x, label_j_b_x, legend_j_b_x, get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[10][2], x_csecs_01, y, j_b_x, get_data_x_csec, title_j_b_x, lable_y, label_j_b_x, legend_j_b_x, get_data_x_csec_label)
+
+    plot_pseudocolor(p.fig, p.ax[11][0], x, y, TRANSPOSE(j_b_y), title_j_b_y, lable_x, lable_y)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[11][1], y_csecs_01, x, j_b_y, get_data_y_csec, title_j_b_y, lable_x, label_j_b_y, legend_j_b_y, get_data_y_csec_label)
+    plot_cross_sections_of_2d_data(p.fig, p.ax[11][2], x_csecs_02, y, j_b_y, get_data_x_csec, title_j_b_y, lable_y, label_j_b_y, legend_j_b_y, get_data_x_csec_label)
+
+    # save plot:
+
+    p.fig.tight_layout()
+    p.fig.savefig(fname = out_file, dpi = dpi)
 
 
 # start:
@@ -341,19 +788,204 @@ def main() -> int:
     in_dir = "/workspace/results/data"
     in_file = in_dir + "/st-vortex-recreation-01/sv-ddcc05p00-T0p05.wtxt"
     wdata = WData.load(in_file)
-    parsed = ParsedWData(wdata, iteration=-1)
+
+    iteration = -1
+    parsed = ParsedWData(wdata, iteration)
+
+    subplot_w = 7
+    subplot_h = 7
 
     out_dir = "/workspace/results/analysis"
+    dpi = 300
 
     # plot:
+
+    plot_normal_density(
+        out_file = out_dir + "/plot_normal_densit.png",
+        dpi = dpi,
+
+        subplot_w = subplot_w,
+        subplot_h = subplot_h,
+
+        Nx = parsed.Nx,
+        Ny = parsed.Ny,
+
+        x = parsed.x_flat,
+        y = parsed.y_flat,
+
+        rho_tot = parsed.rho_tot,
+        rho_a = parsed.rho_a,
+        rho_b = parsed.rho_b,
+
+        title_rho_tot = 'rho_tot',
+        title_rho_a = 'rho_a',
+        title_rho_b = 'rho_b',
+
+        lable_x = 'x',
+        lable_y = 'y',
+
+        lable_rho_tot = 'rho_tot',
+        lable_rho_a = 'rho_a',
+        lable_rho_b = 'rho_b',
+
+        legend_rho_tot = 'rho_tot',
+        legend_rho_a = 'rho_a',
+        legend_rho_b = 'rho_b',
+    )
+
+    plot_normal_density(
+        out_file = out_dir + "/plot_normal_densit_normalized.png",
+        dpi = dpi,
+
+        subplot_w = subplot_w,
+        subplot_h = subplot_h,
+
+        Nx = parsed.Nx,
+        Ny = parsed.Ny,
+
+        x = parsed.x_flat,
+        y = parsed.y_flat,
+
+        rho_tot = parsed.rho_tot / parsed.rho_tot_0,
+        rho_a = parsed.rho_a / parsed.rho_a_0,
+        rho_b = parsed.rho_b / parsed.rho_b_0,
+
+        title_rho_tot = 'rho_total / rho_total_0',
+        title_rho_a = 'rho_a / rho_a_0',
+        title_rho_b = 'rho_b / rho_b_0',
+
+        lable_x = 'x',
+        lable_y = 'y',
+
+        lable_rho_tot = 'rho_total / rho_total_0',
+        lable_rho_a = 'rho_a / rho_a_0',
+        lable_rho_b = 'rho_b / rho_b_0',
+
+        legend_rho_tot = 'rho_total / rho_total_0 ',
+        legend_rho_a = 'rho_a / rho_a_0 ',
+        legend_rho_b = 'rho_b / rho_b_0 ',
+    )
+
+    plot_pairing_gap_function(
+        out_file = out_dir + "/plot_pairing_gap_function.png",
+        dpi = dpi,
+
+        subplot_w = subplot_w,
+        subplot_h = subplot_h,
+
+        Nx = parsed.Nx,
+        Ny = parsed.Ny,
+
+        x = parsed.x_flat,
+        y = parsed.y_flat,
+
+        delta_norm = parsed.delta_norm,
+
+        title_delta_norm = '|Δ|',
+
+        lable_x = 'x',
+        lable_y = 'y',
+
+        lable_delta_norm = '|Δ|',
+
+        legend_delta_norm = '|Δ|',
+    )
+
+    plot_pairing_gap_function(
+        out_file = out_dir + "/plot_pairing_gap_function_normalized.png",
+        dpi = dpi,
+
+        subplot_w = subplot_w,
+        subplot_h = subplot_h,
+
+        Nx = parsed.Nx,
+        Ny = parsed.Ny,
+
+        x = parsed.x_flat,
+        y = parsed.y_flat,
+
+        delta_norm = parsed.delta_norm / parsed.delta_norm_0,
+
+        title_delta_norm = '|Δ| / |Δ_0|',
+
+        lable_x = 'x',
+        lable_y = 'y',
+
+        lable_delta_norm = '|Δ| / |Δ_0|',
+
+        legend_delta_norm = '|Δ| / |Δ_0| ',
+    )
+
     plot_current_density(
-        data = parsed,
-        out_dir = out_dir
+        out_file = out_dir + "/plot_current_density.png",
+        dpi = dpi,
+
+        subplot_w = subplot_w,
+        subplot_h = subplot_h,
+
+        Nx = parsed.Nx,
+        Ny = parsed.Ny,
+
+        x = parsed.x_flat,
+        y = parsed.y_flat,
+
+        j_tot_norm = parsed.j_tot_norm,
+        j_tot_x = parsed.j_tot_x,
+        j_tot_y = parsed.j_tot_y,
+
+        j_a_norm = parsed.j_a_norm,
+        j_a_x = parsed.j_a_x,
+        j_a_y = parsed.j_a_y,
+
+        j_b_norm = parsed.j_b_norm,
+        j_b_x = parsed.j_b_x,
+        j_b_y = parsed.j_b_y,
+
+        title_j_tot = 'j_total',
+        title_j_tot_norm = '|j_total|',
+        title_j_tot_x = 'j_total_x',
+        title_j_tot_y = 'j_total_y',
+
+        title_j_a = 'j_a',
+        title_j_a_norm = '|j_a|',
+        title_j_a_x = 'j_a_x',
+        title_j_a_y = 'j_a_y',
+
+        title_j_b = 'j_b',
+        title_j_b_norm = '|j_b|',
+        title_j_b_x = 'j_b_x',
+        title_j_b_y = 'j_b_y',
+
+        lable_x = 'x',
+        lable_y = 'y',
+
+        label_j_tot_norm = '|j_total|',
+        label_j_tot_x = 'j_total_x',
+        label_j_tot_y = 'j_total_y',
+
+        label_j_a_norm = '|j_a|',
+        label_j_a_x = 'j_a_x',
+        label_j_a_y = 'j_a_y',
+
+        label_j_b_norm = '|j_b|',
+        label_j_b_x = 'j_b_x',
+        label_j_b_y = 'j_b_y',
+
+        legend_j_tot_norm = '|j_total|',
+        legend_j_tot_x = 'j_total_x',
+        legend_j_tot_y = 'j_total_y',
+
+        legend_j_a_norm = '|j_a|',
+        legend_j_a_x = 'j_a_x',
+        legend_j_a_y = 'j_a_y',
+
+        legend_j_b_norm = '|j_b|',
+        legend_j_b_x = 'j_b_x',
+        legend_j_b_y = 'j_b_y',
     )
 
     return 0
 
 
 if __name__ == '__main__':
-    # Execute when the module is not initialized from an import statement.
     sys.exit(main())
