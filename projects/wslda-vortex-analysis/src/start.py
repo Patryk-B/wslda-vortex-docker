@@ -43,19 +43,85 @@ class ParsedWData(object):
         self.nx: int = wdata.Nxyz[Axis.X]
         self.ny: int = wdata.Nxyz[Axis.Y]
 
+        print(f"nx = {self.nx}")
+        print(f"ny = {self.ny}")
+        print()
+
         self.nx_half: int = int(self.nx/2)
         self.ny_half: int = int(self.ny/2)
+
+        print(f"nx_half = {self.nx_half}")
+        print(f"ny_half = {self.ny_half}")
+        print()
+
+        self.nx_quarter: int = int(self.nx_half/2)
+        self.ny_quarter: int = int(self.ny_half/2)
+
+        print(f"nx_quarter = {self.nx_quarter}")
+        print(f"ny_quarter = {self.ny_quarter}")
+        print()
 
         self.dx: float = wdata.dxyz[Axis.X]
         self.dy: float = wdata.dxyz[Axis.Y]
 
+        print(f"dx = {self.dx}")
+        print(f"dy = {self.dy}")
+        print()
+
         self.x: np.ndarray = wdata.xyz[Axis.X]
         self.y: np.ndarray = wdata.xyz[Axis.Y]
 
-        self.x_flat: List[float] = self.x.flatten()
-        self.y_flat: List[float] = self.y.flatten()
+        self.x_flat: np.ndarray = self.x.flatten()
+        self.y_flat: np.ndarray = self.y.flatten()
 
-        # rho (x,y)
+        # radius:
+        # - center of the vortex core lies at the center of the grid
+        #   r_v = x[nx * 1/2]
+        #       = y[ny * 1/2]
+        #       = 0
+        #
+        # - vortex bulk spans a circle with r = r_0
+        #   r_0 = abs(x[nx * 1/4]) =
+        #       = abs(x[nx * 3/4]) =
+        #       = y[ny * 3/4]      =
+        #       = 20
+
+        self.x_index_v = self.nx_half
+        self.x_index_0 = self.nx_half + self.nx_quarter
+
+        self.y_index_v = self.ny_half
+        self.y_index_0 = self.ny_half + self.ny_quarter
+
+        print(f"x_index_v = {self.x_index_v}")
+        print(f"x_index_0 = {self.x_index_0}")
+        print()
+        print(f"y_index_v = {self.y_index_v}")
+        print(f"y_index_0 = {self.y_index_0}")
+        print()
+
+        self.x_v = self.x_flat[self.x_index_v]
+        self.x_0 = self.x_flat[self.x_index_0]
+
+        self.y_v = self.y_flat[self.y_index_v]
+        self.y_0 = self.y_flat[self.y_index_0]
+
+        print(f"x_v = {self.x_v}")
+        print(f"x_0 = {self.x_0}")
+        print()
+        print(f"y_v = {self.y_v}")
+        print(f"y_0 = {self.y_0}")
+        print()
+
+        self.r_v = self.x_v
+        self.r_0 = self.x_0
+        self.r_epsilon = 0.01,
+
+        print(f"r_v = {self.r_v}")
+        print(f"r_0 = {self.r_0}")
+        print(f"r_epsilon = {self.r_epsilon}")
+        print()
+
+        # rho (x,y) -> Real
         # - normal density (x,y)
         #
         # - NOTE:
@@ -67,7 +133,41 @@ class ParsedWData(object):
         self.rho_b: np.memmap = wdata.rho_b[iteration]
         self.rho_tot: np.memmap = self.rho_a + self.rho_b
 
-        # delta (x,y)
+        # rho_v = <rho(r = r_v = 0)>
+        # - vortex normal density
+        # - normal density at the center of the vortex core
+
+        self.rho_a_v: np.float64 = self.rho_a[self.nx_half, self.ny_half]
+        self.rho_b_v: np.float64 = self.rho_b[self.nx_half, self.ny_half]
+        self.rho_tot_v: np.float64 = self.rho_tot[self.nx_half, self.ny_half]
+
+        # rho_0 = <rho(r = r_0)>
+        # - bulk normal density
+        # - normal density far from the center of the vortex core
+
+        self.rho_a_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
+            self.x_flat,
+            self.y_flat,
+            self.rho_a,
+            self.r_0,
+            self.r_epsilon
+        )
+        self.rho_b_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
+            self.x_flat,
+            self.y_flat,
+            self.rho_b,
+            self.r_0,
+            self.r_epsilon
+        )
+        self.rho_tot_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
+            self.x_flat,
+            self.y_flat,
+            self.rho_tot,
+            self.r_0,
+            self.r_epsilon
+        )
+
+        # delta (x,y) -> Conplex
         # - pairing gap function (x,y)
         #
         # - NOTE:
@@ -78,24 +178,36 @@ class ParsedWData(object):
         self.delta = wdata.delta[iteration]
         self.delta_norm = np.abs(self.delta)
 
-        # j (x,y)
+        # delta_norm_0 = <delta_norm(r = r_0)>
+        # - bulk pairing gap function
+        # - pairing gap function far from the center of the vortex core
+
+        self.delta_norm_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
+            self.x_flat,
+            self.y_flat,
+            self.delta_norm,
+            self.r_0,
+            self.r_epsilon
+        )
+
+        # j (x,y) -> Vector
         # - current density (x,y)
         #
         # - WARNING:
-        #   - in sone places j needs to be transposed !!!
+        #   - j needs to be transposed !!!
         #
         # - NOTE:
         #   - according to https://gitlab.fizyka.pw.edu.pl/wtools/wdata/-/wikis/Examples/Python-examples#cross-section-of-velocity-field-for-quantum-vortex:
         #     - wdata.j_a[iteration][Component.X][ nx/2, :    ] === j_a_x( x = nx/2, y        )
         #     - wdata.j_a[iteration][Component.X][ :   , ny/2 ] === j_a_x( x       , y = ny/2 )
 
-        self.j_a_x: np.memmap = wdata.j_a[iteration][Component.X]
-        self.j_a_y: np.memmap = wdata.j_a[iteration][Component.Y]
+        self.j_a_x: np.memmap = wdata.j_a[iteration][Component.X].T
+        self.j_a_y: np.memmap = wdata.j_a[iteration][Component.Y].T
         self.j_a: np.ndarray = np.column_stack((self.j_a_x, self.j_a_y))
         self.j_a_norm: np.ndarray = np.sqrt(self.j_a_x ** 2 + self.j_a_y ** 2)
 
-        self.j_b_x: np.memmap = wdata.j_b[iteration][Component.X]
-        self.j_b_y: np.memmap = wdata.j_b[iteration][Component.Y]
+        self.j_b_x: np.memmap = wdata.j_b[iteration][Component.X].T
+        self.j_b_y: np.memmap = wdata.j_b[iteration][Component.Y].T
         self.j_b: np.ndarray = np.column_stack((self.j_b_x, self.j_b_y))
         self.j_b_norm: np.ndarray = np.sqrt(self.j_b_x ** 2 + self.j_b_y ** 2)
 
@@ -104,87 +216,145 @@ class ParsedWData(object):
         self.j_tot: np.ndarray = np.column_stack((self.j_tot_x, self.j_tot_y))
         self.j_tot_norm: np.ndarray = np.sqrt(self.j_tot_x ** 2 + self.j_tot_y ** 2)
 
-        #
-        # NOTE:
-        # - vortex core lies in the center of the grid at cords [ x[nx/2], y[ny/2] ] == [40, 40]
-        # - therefore assuming vortex bulk spans a circle with r == x[nx/4] == y[ny/4] == 20
-        #
-
-        bulk_radius = self.nx_half / 2
-        epsilon = 0.01
-
-        # rho_v (x = 0, y = 0)
-        # - vortex normal density
-        # - normal density at the center of the vortex core
-
-        self.rho_tot_v: float = self.rho_tot[self.nx_half, self.ny_half]
-        self.rho_a_v: float = self.rho_a[self.nx_half, self.ny_half]
-        self.rho_b_v: float = self.rho_b[self.nx_half, self.ny_half]
-
-        # rho_0 (x > rv, y > rv)
-        # - bulk normal density
-        # - normal density far from the center of the vortex core
-
-        self.rho_tot_0: float = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
-            self.rho_tot,
-            bulk_radius,
-            epsilon
-        )
-        self.rho_a_0: float = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
-            self.rho_a,
-            bulk_radius,
-            epsilon
-        )
-        self.rho_b_0: float = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
-            self.rho_b,
-            bulk_radius,
-            epsilon
-        )
-
-        # delta_0 (x > rv, y > rv)
-        # - bulk pairing gap function
-        # - pairing gap function far from the center of the vortex core
-
-        self.delta_norm_0: float = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
-            self.delta_norm,
-            bulk_radius,
-            epsilon
-        )
-
-        # j_0 (x > rv, y > rv)
+        # j_0 = <j(r = r_0)>
         # - bulk current density
         # - current density far from the center of the vortex core
 
-        self.j_a_norm_0: float = self.__calc_arithmetic_mean_over_circle(
+        self.j_a_norm_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
             self.x_flat,
             self.y_flat,
             self.j_a_norm,
-            bulk_radius,
-            epsilon
+            self.r_0,
+            self.r_epsilon
         )
-        self.j_b_norm_0: float = self.__calc_arithmetic_mean_over_circle(
+        self.j_b_norm_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
             self.x_flat,
             self.y_flat,
             self.j_b_norm,
-            bulk_radius,
-            epsilon
+            self.r_0,
+            self.r_epsilon
         )
-        self.j_tot_norm_0: float = self.__calc_arithmetic_mean_over_circle(
+        self.j_tot_norm_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
             self.x_flat,
             self.y_flat,
             self.j_tot_norm,
-            bulk_radius,
-            epsilon
+            self.r_0,
+            self.r_epsilon
         )
 
+        # nu (x,y) -> Complex
+        # -
+
+        self.nu: np.memmap = wdata.nu[iteration]
+
+        # tau (x,y) -> Real
+        # -
+
+        self.tau_a: np.memmap = wdata.tau_a[iteration]
+        self.tau_b: np.memmap = wdata.tau_b[iteration]
+        self.tau_tot: np.memmap = self.tau_a + self.tau_b
+
+        # V (x,y) -> Real
+        # -
+
+        self.V_a: np.memmap = wdata.V_a[iteration]
+        self.V_b: np.memmap = wdata.V_b[iteration]
+        self.V_tot: np.memmap = self.V_a + self.V_b
+
+        # V_ext (x,y) -> Real
+        # -
+
+        self.V_ext_a: np.memmap = wdata.V_ext_a[iteration]
+        self.V_ext_b: np.memmap = wdata.V_ext_b[iteration]
+        self.V_ext_tot: np.memmap = self.V_ext_a + self.V_ext_b
+
+        # delta_ext (x,y) -> Complex
+        # -
+
+        self.delta_ext: np.memmap = wdata.delta_ext[iteration]
+
+        # velocity_ext (x,y) -> Vector
+        # -
+
+        self.velocity_ext_a_x: np.memmap = wdata.velocity_ext_a[iteration][Component.X]
+        self.velocity_ext_a_y: np.memmap = wdata.velocity_ext_a[iteration][Component.Y]
+        self.velocity_ext_a: np.ndarray = np.column_stack((self.velocity_ext_a_x, self.velocity_ext_a_y))
+        self.velocity_ext_a_norm: np.ndarray = np.sqrt(self.velocity_ext_a_x ** 2 + self.velocity_ext_a_y ** 2)
+
+        self.velocity_ext_b_x: np.memmap = wdata.velocity_ext_b[iteration][Component.X]
+        self.velocity_ext_b_y: np.memmap = wdata.velocity_ext_b[iteration][Component.Y]
+        self.velocity_ext_b: np.ndarray = np.column_stack((self.velocity_ext_b_x, self.velocity_ext_b_y))
+        self.velocity_ext_b_norm: np.ndarray = np.sqrt(self.velocity_ext_b_x ** 2 + self.velocity_ext_b_y ** 2)
+
+        self.velocity_ext_tot_x: np.memmap = self.velocity_ext_a_x + self.velocity_ext_b_x
+        self.velocity_ext_tot_y: np.memmap = self.velocity_ext_a_y + self.velocity_ext_b_y
+        self.velocity_ext_tot: np.ndarray = np.column_stack((self.velocity_ext_tot_x, self.velocity_ext_tot_y))
+        self.velocity_ext_tot_norm: np.ndarray = np.sqrt(self.velocity_ext_tot_x ** 2 + self.velocity_ext_tot_y ** 2)
+
+        # alpha (x,y) -> Real
+        # -
+
+        self.alpha_a: np.memmap = wdata.alpha_a[iteration]
+        self.alpha_b: np.memmap = wdata.alpha_b[iteration]
+        self.alpha_tot: np.memmap = self.alpha_a + self.alpha_b
+
+        # alpha_0 = <alpha(r_0)>
+        # -
+
+        self.alpha_a_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
+            self.x_flat,
+            self.y_flat,
+            self.alpha_a,
+            self.r_0,
+            self.r_epsilon
+        )
+        self.alpha_b_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
+            self.x_flat,
+            self.y_flat,
+            self.alpha_b,
+            self.r_0,
+            self.r_epsilon
+        )
+        self.alpha_tot_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
+            self.x_flat,
+            self.y_flat,
+            self.alpha_tot,
+            self.r_0,
+            self.r_epsilon
+        )
+
+        # A (x,y) -> Vector
+        # -
+
+        self.A_a: np.memmap = wdata.A_a[iteration]
+        self.A_b: np.memmap = wdata.A_b[iteration]
+        self.A_tot: np.memmap = self.A_a + self.A_b
+
+        # k_F
+        # - fermi momentum
+        # - calcualted from data_0
+
+        self.k_F: np.float64 = np.cbrt(3.0 * (np.pi ** 2) * self.rho_tot_0)
+        pprint.pp(self.k_F)
+
+        # epislon_F
+        # - fermi energy
+        # - calcualted from data_0
+
+        self.epsilon_F: np.float64 = (self.k_F ** 2) / 2.0
+        pprint.pp(self.epsilon_F)
+
+        # ass_star
+        # - effective ass
+
+        # self.A_0 =
+
+        # pprint.pp(wdata.alpha_a)
+
+        # epison_star
+
+        # l_c
+        # - coherence length
 
     def __calc_arithmetic_mean_over_circle(
         self,
@@ -192,8 +362,8 @@ class ParsedWData(object):
         y: List[float],
         data: np.ndarray,
         R: float,
-        epsilon: float
-    ):
+        epsilon: float = 0.01
+    ) -> np.float64:
         # Check which indices lie on a circle with radius R, with precision epsilon:
         indices = []
         for i in range(0, len(x)):
@@ -204,7 +374,7 @@ class ParsedWData(object):
                     indices.append([i, j])
 
         # calc data's arithmetic mean value on the circle:
-        result = 0
+        result = np.float64(0.0)
         for i, j in indices:
             # print (f"{x[i]}, {y[j]} ---> r = {np.sqrt(x[i] ** 2 + y[j] ** 2)}")
             result += data[i, j]
@@ -238,6 +408,8 @@ class Plot():
 
         # create plot and subplots:
 
+        self.ignored_subplots: List[List[int]] = ignore_subplots
+
         self.fig = plt.figure(
             figsize = (self.w, self.h)
         )
@@ -248,8 +420,6 @@ class Plot():
             height_ratios = self.rows_h_ratios,
             width_ratios  = self.cols_w_ratios,
         )
-
-        self.ignored_subplots: List[List[int]] = ignore_subplots
 
         self.ax: List[List[matplotlib.axes.Axes]] = [[None for _ in range(self.ncols)] for _ in range(self.nrows)]
         for i in range(0, self.nrows):
@@ -286,19 +456,25 @@ def gen_scientific_formatter() -> ticker.Formatter:
     return formatter
 
 
-# basic plots
+# gen single subplot:
+# - basic
 
 
-def plot_vectors(
+def gen_subplot_of_vectors(
     fig: matplotlib.figure.Figure,
     ax: matplotlib.axes.Axes,
+
     x: np_typing.ArrayLike,
     y: np_typing.ArrayLike,
+
     data_x: np_typing.ArrayLike,
     data_y: np_typing.ArrayLike,
+
     stride: int,
     scale: float,
+
     title: str,
+
     label_x: str,
     label_y: str,
 ) -> None:
@@ -336,14 +512,18 @@ def plot_vectors(
     ax.axvline(0, color='grey', lw=0.5)
 
 
-def plot_streamlines(
+def gen_subplot_of_streamlines(
     fig: matplotlib.figure.Figure,
     ax: matplotlib.axes.Axes,
+
     x: np_typing.ArrayLike,
     y: np_typing.ArrayLike,
+
     data_x: np_typing.ArrayLike,
     data_y: np_typing.ArrayLike,
-    title: str,
+
+    title_data: str,
+
     label_x: str,
     label_y: str,
 ) -> None:
@@ -354,7 +534,7 @@ def plot_streamlines(
     ax.streamplot(x, y, data_x, data_y, color=color, linewidth=1, density=1.5)
 
     # Labels
-    ax.set_title(title)
+    ax.set_title(title_data)
     ax.set_xlabel(label_x)
     ax.set_ylabel(label_y)
 
@@ -371,13 +551,17 @@ def plot_streamlines(
     ax.set_aspect('equal', adjustable='box')
 
 
-def plot_pseudocolor(
+def gen_subplot_of_pseudocolor(
     fig: matplotlib.figure.Figure,
     ax: matplotlib.axes.Axes,
+
     x: np_typing.ArrayLike,
     y: np_typing.ArrayLike,
+
     data: np_typing.ArrayLike,
-    title: str,
+
+    title_data: str,
+
     label_x: str,
     label_y: str,
 ) -> None:
@@ -385,7 +569,7 @@ def plot_pseudocolor(
     pcolor = ax.pcolormesh(x, y, data, cmap='plasma', shading='auto')
 
     # Labels
-    ax.set_title(title)
+    ax.set_title(title_data)
     ax.set_xlabel(label_x)
     ax.set_ylabel(label_y)
 
@@ -419,21 +603,30 @@ def plot_pseudocolor(
     color_bar.ax.yaxis.offsetText.set_x(2)
 
 
-# basic plots tailored to data
+# gen single subplot:
+# - avanced
 
 
-def plot_csecs_of_2d_data(
+def gen_subplot_of_csecs_of_2d_data_real(
     fig: matplotlib.figure.Figure,
     ax: matplotlib.axes.Axes,
-    csec_indices: List[int],
+
     x: np_typing.ArrayLike,
+
     data: np_typing.ArrayLike,
+
+    csec_indices: List[int],
+
     gen_data_csec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
-    title: str,
+
+    title_data: str,
+
     label_x: str,
-    label_y: str,
-    labe_legend: str,
-    gen_legend_label_func: Callable[[np_typing.ArrayLike, int], str],
+    label_data: str,
+
+    legend_data: str,
+
+    gen_data_csec_label_func: Callable[[np_typing.ArrayLike, int], str],
 ) -> None:
     # The default color cycle
     colors = gen_default_color_cycle()
@@ -446,7 +639,7 @@ def plot_csecs_of_2d_data(
         ax.plot(
             x,
             data_csec,
-            label=gen_legend_label_func(labe_legend, x, i),
+            label=gen_data_csec_label_func(legend_data, x, i),
             marker='o',
             markersize=4,
             linestyle='None',
@@ -465,13 +658,21 @@ def plot_csecs_of_2d_data(
         )
 
     # Labels
-    ax.set_title(title)
+    ax.set_title(title_data)
     ax.set_xlabel(label_x)
-    ax.set_ylabel(label_y)
+    ax.set_ylabel(label_data)
 
     # Axis limits
-    ax.set_xlim(1.05 * np.min(x), 1.05 * np.max(x))
-    ax.set_ylim(1.05 * np.min(data), 1.05 * np.max(data))
+    min_data = np.min(data)
+    max_data = np.max(data)
+    ax.set_xlim(
+        np.min(x),
+        np.max(x)
+    )
+    ax.set_ylim(
+        min_data - 0.02 * np.abs(min_data),
+        max_data + 0.02 * np.abs(max_data)
+    )
 
     # Grid lines
     ax.grid()
@@ -490,10 +691,662 @@ def plot_csecs_of_2d_data(
     ax.legend()
 
 
+# gen row of subplots:
+
+
+def gen_row_of_subplots_of_2d_data_real(
+    fig: matplotlib.figure.Figure,
+    ax: List[matplotlib.axes.Axes],
+
+    ax_row_offset: int,
+
+    x: np_typing.ArrayLike,
+    y: np_typing.ArrayLike,
+    data: np_typing.ArrayLike,
+
+    xcsecs_indices: List[int],
+    ycsecs_indices: List[int],
+
+    gen_data_xcsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+    gen_data_ycsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+
+    title_data: str,
+
+    label_x: str,
+    label_y: str,
+    label_data: str,
+
+    legend_data: str,
+
+    gen_data_xcsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+    gen_data_ycsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+):
+    gen_subplot_of_pseudocolor(
+        fig = fig,
+        ax = ax[ax_row_offset + 0],
+
+        x = x,
+        y = y,
+
+        data = data,
+
+        title_data = title_data,
+
+        label_x = label_x,
+        label_y = label_y
+    )
+
+    gen_subplot_of_csecs_of_2d_data_real(
+        fig = fig,
+        ax = ax[ax_row_offset + 1],
+
+        x = x,
+
+        data = data,
+
+        csec_indices = ycsecs_indices,
+
+        gen_data_csec_func = gen_data_ycsec_func,
+
+        title_data = title_data,
+
+        label_x = label_x,
+        label_data = label_data,
+
+        legend_data = legend_data,
+
+        gen_data_csec_label_func = gen_data_ycsec_label_func
+    )
+
+    gen_subplot_of_csecs_of_2d_data_real(
+        fig = fig,
+        ax = ax[ax_row_offset + 2],
+
+        x = y,
+
+        data = data,
+
+        csec_indices = xcsecs_indices,
+
+        gen_data_csec_func = gen_data_xcsec_func,
+
+        title_data = title_data,
+
+        label_x = label_y,
+        label_data = label_data,
+
+        legend_data = legend_data,
+
+        gen_data_csec_label_func = gen_data_xcsec_label_func
+    )
+
+
+def gen_row_of_subplots_of_2d_data_vector(
+    fig: matplotlib.figure.Figure,
+    ax: List[matplotlib.axes.Axes],
+
+    ax_row_offset: int,
+
+    x: np_typing.ArrayLike,
+    y: np_typing.ArrayLike,
+
+    data_x: np_typing.ArrayLike,
+    data_y: np_typing.ArrayLike,
+
+    stride: int,
+    scale: float,
+
+    title_data: str,
+
+    label_x: str,
+    label_y: str,
+
+    label_data_x: str,
+    label_data_y: str,
+):
+    gen_subplot_of_vectors(
+        fig = fig,
+        ax = ax[ax_row_offset + 0],
+
+        x = x,
+        y = y,
+
+        data_x = data_x,
+        data_y = data_y,
+
+        stride = stride,
+        scale = scale,
+
+        title_data = title_data,
+
+        label_x = label_x,
+        label_y = label_y
+    )
+
+    gen_subplot_of_streamlines(
+        fig = fig,
+        ax = ax[ax_row_offset + 1],
+
+        x = x,
+        y = y,
+
+        data_x = data_x,
+        data_y = data_y,
+
+        title_data = title_data,
+
+        label_x = label_x,
+        label_y = label_y
+    )
+
+
+# gen grid of subplots:
+
+
+def gen_grid_of_subplots_of_01_series_of_2d_data_real(
+    fig: matplotlib.figure.Figure,
+    ax: List[List[matplotlib.axes.Axes]],
+
+    ax_col_offset: int,
+
+    x: np.ndarray,
+    y: np.ndarray,
+
+    data: np.ndarray,
+
+    data_xcsecs_indices: List[int],
+    data_ycsecs_indices: List[int],
+
+    gen_data_xcsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+    gen_data_ycsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+
+    title_data: str,
+
+    label_x: str,
+    label_y: str,
+
+    label_data: str,
+
+    legend_data: str,
+
+    gen_data_xcsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+    gen_data_ycsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+):
+    gen_row_of_subplots_of_2d_data_real(
+        fig = fig,
+        ax = ax[ax_col_offset + 0],
+
+        ax_row_offset = 0,
+
+        x = x,
+        y = y,
+
+        data = data,
+
+        xcsecs_indices = data_xcsecs_indices,
+        ycsecs_indices = data_ycsecs_indices,
+
+        gen_data_xcsec_func = gen_data_xcsec_func,
+        gen_data_ycsec_func = gen_data_ycsec_func,
+
+        title_data = title_data,
+
+        label_x = label_x,
+        label_y = label_y,
+
+        label_data = label_data,
+
+        legend_data = legend_data,
+
+        gen_data_xcsec_label_func = gen_data_xcsec_label_func,
+        gen_data_ycsec_label_func = gen_data_ycsec_label_func,
+    )
+
+
+def gen_grid_of_subplots_of_03_series_of_2d_data_real(
+    fig: matplotlib.figure.Figure,
+    ax: List[List[matplotlib.axes.Axes]],
+
+    ax_col_offset: int,
+
+    x: np.ndarray,
+    y: np.ndarray,
+
+    data_01: np.ndarray,
+    data_02: np.ndarray,
+    data_03: np.ndarray,
+
+    data_01_xcsecs_indices: List[int],
+    data_01_ycsecs_indices: List[int],
+
+    data_02_xcsecs_indices: List[int],
+    data_02_ycsecs_indices: List[int],
+
+    data_03_xcsecs_indices: List[int],
+    data_03_ycsecs_indices: List[int],
+
+    gen_data_01_xcsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+    gen_data_01_ycsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+
+    gen_data_02_xcsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+    gen_data_02_ycsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+
+    gen_data_03_xcsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+    gen_data_03_ycsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+
+    title_data_01: str,
+    title_data_02: str,
+    title_data_03: str,
+
+    label_x: str,
+    label_y: str,
+
+    label_data_01: str,
+    label_data_02: str,
+    label_data_03: str,
+
+    legend_data_01: str,
+    legend_data_02: str,
+    legend_data_03: str,
+
+    gen_data_01_xcsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+    gen_data_01_ycsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+
+    gen_data_02_xcsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+    gen_data_02_ycsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+
+    gen_data_03_xcsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+    gen_data_03_ycsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+):
+    gen_grid_of_subplots_of_01_series_of_2d_data_real(
+        fig = fig,
+        ax = ax,
+
+        ax_col_offset = ax_col_offset + 0,
+
+        x = x,
+        y = y,
+
+        data = data_01,
+
+        data_xcsecs_indices = data_01_xcsecs_indices,
+        data_ycsecs_indices = data_01_ycsecs_indices,
+
+        gen_data_xcsec_func = gen_data_01_xcsec_func,
+        gen_data_ycsec_func = gen_data_01_ycsec_func,
+
+        title_data = title_data_01,
+
+        label_x = label_x,
+        label_y = label_y,
+
+        label_data = label_data_01,
+
+        legend_data = legend_data_01,
+
+        gen_data_xcsec_label_func = gen_data_01_xcsec_label_func,
+        gen_data_ycsec_label_func = gen_data_01_ycsec_label_func,
+    )
+
+    gen_grid_of_subplots_of_01_series_of_2d_data_real(
+        fig = fig,
+        ax = ax,
+
+        ax_col_offset = ax_col_offset + 1,
+
+        x = x,
+        y = y,
+
+        data = data_02,
+
+        data_xcsecs_indices = data_02_xcsecs_indices,
+        data_ycsecs_indices = data_02_ycsecs_indices,
+
+        gen_data_xcsec_func = gen_data_02_xcsec_func,
+        gen_data_ycsec_func = gen_data_02_ycsec_func,
+
+        title_data = title_data_02,
+
+        label_x = label_x,
+        label_y = label_y,
+
+        label_data = label_data_02,
+
+        legend_data = legend_data_02,
+
+        gen_data_xcsec_label_func = gen_data_02_xcsec_label_func,
+        gen_data_ycsec_label_func = gen_data_02_ycsec_label_func,
+    )
+
+    gen_grid_of_subplots_of_01_series_of_2d_data_real(
+        fig = fig,
+        ax = ax,
+
+        ax_col_offset = ax_col_offset + 2,
+
+        x = x,
+        y = y,
+
+        data = data_03,
+
+        data_xcsecs_indices = data_03_xcsecs_indices,
+        data_ycsecs_indices = data_03_ycsecs_indices,
+
+        gen_data_xcsec_func = gen_data_03_xcsec_func,
+        gen_data_ycsec_func = gen_data_03_ycsec_func,
+
+        title_data = title_data_03,
+
+        label_x = label_x,
+        label_y = label_y,
+
+        label_data = label_data_03,
+
+        legend_data = legend_data_03,
+
+        gen_data_xcsec_label_func = gen_data_03_xcsec_label_func,
+        gen_data_ycsec_label_func = gen_data_03_ycsec_label_func,
+    )
+
+
+def gen_grid_of_subplots_of_01_series_of_2d_data_vetor(
+    fig: matplotlib.figure.Figure,
+    ax: List[List[matplotlib.axes.Axes]],
+
+    ax_col_offset: int,
+
+    x: np.ndarray,
+    y: np.ndarray,
+
+    data_norm: np.ndarray,
+    data_x: np.ndarray,
+    data_y: np.ndarray,
+
+    stride: int,
+    scale: float,
+
+    data_norm_xcsecs_indices: List[int],
+    data_norm_ycsecs_indices: List[int],
+
+    data_x_xcsecs_indices: List[int],
+    data_x_ycsecs_indices: List[int],
+
+    data_y_xcsecs_indices: List[int],
+    data_y_ycsecs_indices: List[int],
+
+    gen_data_norm_xcsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+    gen_data_norm_ycsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+
+    gen_data_x_xcsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+    gen_data_x_ycsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+
+    gen_data_y_xcsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+    gen_data_y_ycsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+
+    title_data: str,
+    title_data_norm: str,
+    title_data_x: str,
+    title_data_y: str,
+
+    label_x: str,
+    label_y: str,
+
+    label_data_norm: str,
+    label_data_x: str,
+    label_data_y: str,
+
+    legend_data_norm: str,
+    legend_data_x: str,
+    legend_data_y: str,
+
+    gen_data_norm_xcsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+    gen_data_norm_ycsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+
+    gen_data_x_xcsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+    gen_data_x_ycsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+
+    gen_data_y_xcsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+    gen_data_y_ycsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+):
+    gen_row_of_subplots_of_2d_data_vector(
+        fig = fig,
+        ax = ax[ax_col_offset + 0],
+
+        ax_row_offset = 0,
+
+        x = x,
+        y = y,
+
+        data_x = data_x,
+        data_y = data_y,
+
+        stride = stride,
+        scale = scale,
+
+        title_data = title_data,
+
+        label_x = label_x,
+        label_y = label_y,
+
+        label_data_x = label_data_x,
+        label_data_y = label_data_y,
+    )
+
+    gen_grid_of_subplots_of_03_series_of_2d_data_real(
+        fig = fig,
+        ax = ax,
+
+        ax_col_offset = ax_col_offset + 1,
+
+        x = x,
+        y = y,
+
+        data_01 = data_norm,
+        data_02 = data_x,
+        data_03 = data_y,
+
+        data_01_xcsecs_indices = data_norm_xcsecs_indices,
+        data_01_ycsecs_indices = data_norm_ycsecs_indices,
+
+        data_02_xcsecs_indices = data_x_xcsecs_indices,
+        data_02_ycsecs_indices = data_x_ycsecs_indices,
+
+        data_03_xcsecs_indices = data_y_xcsecs_indices,
+        data_03_ycsecs_indices = data_y_ycsecs_indices,
+
+        gen_data_01_xcsec_func = gen_data_norm_xcsec_func,
+        gen_data_01_ycsec_func = gen_data_norm_ycsec_func,
+
+        gen_data_02_xcsec_func = gen_data_x_xcsec_func,
+        gen_data_02_ycsec_func = gen_data_x_ycsec_func,
+
+        gen_data_03_xcsec_func = gen_data_y_xcsec_func,
+        gen_data_03_ycsec_func = gen_data_y_ycsec_func,
+
+        title_data_01 = title_data_norm,
+        title_data_02 = title_data_x,
+        title_data_03 = title_data_y,
+
+        label_x = label_x,
+        label_y = label_y,
+
+        label_data_01 = label_data_norm,
+        label_data_02 = label_data_x,
+        label_data_03 = label_data_y,
+
+        legend_data_01 = legend_data_norm,
+        legend_data_02 = legend_data_x,
+        legend_data_03 = legend_data_y,
+
+        gen_data_01_xcsec_label_func = gen_data_norm_xcsec_label_func,
+        gen_data_01_ycsec_label_func = gen_data_norm_ycsec_label_func,
+
+        gen_data_02_xcsec_label_func = gen_data_x_xcsec_label_func,
+        gen_data_02_ycsec_label_func = gen_data_x_ycsec_label_func,
+
+        gen_data_03_xcsec_label_func = gen_data_y_xcsec_label_func,
+        gen_data_03_ycsec_label_func = gen_data_y_ycsec_label_func,
+    )
+
+
+# def gen_grid_of_subplots_of_03_series_of_2d_data_vetor(
+#     fig: matplotlib.figure.Figure,
+#     ax: List[List[matplotlib.axes.Axes]],
+
+#     ax_col_offset: int,
+
+#     x: np.ndarray,
+#     y: np.ndarray,
+
+#     data_norm: np.ndarray,
+#     data_x: np.ndarray,
+#     data_y: np.ndarray,
+
+#     stride: int,
+#     scale: float,
+
+#     xcsecs_indices: List[int],
+#     ycsecs_indices: List[int],
+
+#     gen_data_xcsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+#     gen_data_ycsec_func: Callable[[np_typing.ArrayLike, int], np_typing.ArrayLike],
+
+#     title_data_01: str,
+#     title_data_01_norm: str,
+#     title_data_01_x: str,
+#     title_data_01_y: str,
+
+#     title_data_02: str,
+#     title_data_02_norm: str,
+#     title_data_02_x: str,
+#     title_data_02_y: str,
+
+#     title_data_03: str,
+#     title_data_03_norm: str,
+#     title_data_03_x: str,
+#     title_data_03_y: str,
+
+#     label_x: str,
+#     label_y: str,
+
+#     label_data_01_norm: str,
+#     label_data_01_x: str,
+#     label_data_01_y: str,
+
+#     label_data_02_norm: str,
+#     label_data_02_x: str,
+#     label_data_02_y: str,
+
+#     label_data_03_norm: str,
+#     label_data_03_x: str,
+#     label_data_03_y: str,
+
+#     legend_data_01_norm: str,
+#     legend_data_01_x: str,
+#     legend_data_01_y: str,
+
+#     legend_data_02_norm: str,
+#     legend_data_02_x: str,
+#     legend_data_02_y: str,
+
+#     legend_data_03_norm: str,
+#     legend_data_03_x: str,
+#     legend_data_03_y: str,
+
+#     gen_data_norm_xcsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+#     gen_data_norm_ycsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+
+#     gen_data_x_xcsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+#     gen_data_x_ycsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+
+#     gen_data_y_xcsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+#     gen_data_y_ycsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+
+#     gen_data_norm_xcsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+#     gen_data_norm_ycsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+
+#     gen_data_x_xcsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+#     gen_data_x_ycsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+
+#     gen_data_y_xcsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+#     gen_data_y_ycsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+
+#     gen_data_03_norm_xcsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+#     gen_data_03_norm_ycsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+
+#     gen_data_03_x_xcsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+#     gen_data_03_x_ycsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+
+#     gen_data_03_y_xcsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+#     gen_data_03_y_ycsec_label_func: Callable[[np_typing.ArrayLike, int], str],
+# ):
+#     gen_row_of_subplots_of_2d_data_vector(
+#         fig = fig,
+#         ax = ax[ax_col_offset + 0],
+
+#         ax_row_offset = 0,
+
+#         x = x,
+#         y = y,
+
+#         data_x = data_x,
+#         data_y = data_y,
+
+#         stride = stride,
+#         scale = scale,
+
+#         title_data = title_data,
+
+#         label_x = label_x,
+#         label_y = label_y,
+
+#         label_data_x = label_data_x,
+#         label_data_y = label_data_y,
+#     )
+
+#     gen_grid_of_subplots_of_03_series_of_2d_data_real(
+#         fig = fig,
+#         ax = ax,
+
+#         ax_col_offset = ax_col_offset + 1,
+
+#         x = x,
+#         y = y,
+
+#         data_01 = data_norm,
+#         data_02 = data_x,
+#         data_03 = data_y,
+
+#         xcsecs_indices = xcsecs_indices,
+#         ycsecs_indices = ycsecs_indices,
+
+#         gen_data_xcsec_func = gen_data_xcsec_func,
+#         gen_data_ycsec_func = gen_data_ycsec_func,
+
+#         title_data_01 = title_data_norm,
+#         title_data_02 = title_data_x,
+#         title_data_03 = title_data_y,
+
+#         label_x = label_x,
+#         label_y = label_y,
+
+#         label_data_01 = label_data_norm,
+#         label_data_02 = label_data_x,
+#         label_data_03 = label_data_y,
+
+#         legend_data_01 = legend_data_norm,
+#         legend_data_02 = legend_data_x,
+#         legend_data_03 = legend_data_y,
+
+#         gen_data_xcsec_label_func = gen_data_xcsec_label_func,
+#         gen_data_ycsec_label_func = gen_data_ycsec_label_func,
+#     )
+
+
 # plot systen properties:
 
 
-def plot_normal_density(
+def __plot_01_normal_density(
     out_file: str,
     dpi: int,
 
@@ -503,8 +1356,8 @@ def plot_normal_density(
     nx: int,
     ny: int,
 
-    x: List[float],
-    y: List[float],
+    x: np.ndarray,
+    y: np.ndarray,
 
     rho_tot: np.ndarray,
     rho_a: np.ndarray,
@@ -514,12 +1367,12 @@ def plot_normal_density(
     title_rho_a: str,
     title_rho_b: str,
 
-    lable_x: str,
-    lable_y: str,
+    label_x: str,
+    label_y: str,
 
-    lable_rho_tot: str,
-    lable_rho_a: str,
-    lable_rho_b: str,
+    label_rho_tot: str,
+    label_rho_a: str,
+    label_rho_b: str,
 
     legend_rho_tot: str,
     legend_rho_a: str,
@@ -533,29 +1386,70 @@ def plot_normal_density(
         rows_h_ratios = [1, 1, 1],
     )
 
-    x_csecs_00 = gen_csecs_indices(nx/2)
-    y_csecs_00 = gen_csecs_indices(ny/2)
+    xcsecs_indices = gen_csecs_indices(nx/2)
+    ycsecs_indices = gen_csecs_indices(ny/2)
 
-    get_data_x_csec = lambda data, x: data[x, :]
-    get_data_y_csec = lambda data, y: data[:, y]
+    gen_data_xcsec = lambda data, x: data[x, :]
+    gen_data_ycsec = lambda data, y: data[:, y]
 
-    get_data_x_csec_label = lambda legend, x, i: f"{legend}(x = {x[i]}, y)"
-    get_data_y_csec_label = lambda legend, y, i: f"{legend}(x, y = {y[i]})"
+    gen_data_xcsec_label = lambda legend, x, i: f"{legend}(x = {x[i]}, y)"
+    gen_data_ycsec_label = lambda legend, y, i: f"{legend}(x, y = {y[i]})"
 
-    # plot data:
-    # - rho
+    gen_grid_of_subplots_of_03_series_of_2d_data_real(
+        fig = p.fig,
+        ax = p.ax,
 
-    plot_pseudocolor(p.fig, p.ax[0][0], x, y, rho_tot, title_rho_tot, lable_x, lable_y)
-    plot_csecs_of_2d_data(p.fig, p.ax[0][1], y_csecs_00, x, rho_tot, get_data_y_csec, title_rho_tot, lable_x, lable_rho_tot, legend_rho_tot, get_data_y_csec_label)
-    plot_csecs_of_2d_data(p.fig, p.ax[0][2], x_csecs_00, y, rho_tot, get_data_x_csec, title_rho_tot, lable_y, lable_rho_tot, legend_rho_tot, get_data_x_csec_label)
+        ax_col_offset = 0,
 
-    plot_pseudocolor(p.fig, p.ax[1][0], x, y, rho_a, title_rho_a, lable_x, lable_y)
-    plot_csecs_of_2d_data(p.fig, p.ax[1][1], y_csecs_00, x, rho_a, get_data_y_csec, title_rho_a, lable_x, lable_rho_a, legend_rho_a, get_data_y_csec_label)
-    plot_csecs_of_2d_data(p.fig, p.ax[1][2], x_csecs_00, y, rho_a, get_data_x_csec, title_rho_a, lable_y, lable_rho_a, legend_rho_a, get_data_x_csec_label)
+        x = x,
+        y = y,
 
-    plot_pseudocolor(p.fig, p.ax[2][0], x, y, rho_b, title_rho_b, lable_x, lable_y)
-    plot_csecs_of_2d_data(p.fig, p.ax[2][1], y_csecs_00, x, rho_b, get_data_y_csec, title_rho_b, lable_x, lable_rho_b, legend_rho_b, get_data_y_csec_label)
-    plot_csecs_of_2d_data(p.fig, p.ax[2][2], x_csecs_00, y, rho_b, get_data_x_csec, title_rho_b, lable_y, lable_rho_b, legend_rho_b, get_data_x_csec_label)
+        data_01 = rho_tot,
+        data_02 = rho_a,
+        data_03 = rho_b,
+
+        data_01_xcsecs_indices = xcsecs_indices,
+        data_01_ycsecs_indices = ycsecs_indices,
+
+        data_02_xcsecs_indices = xcsecs_indices,
+        data_02_ycsecs_indices = ycsecs_indices,
+
+        data_03_xcsecs_indices = xcsecs_indices,
+        data_03_ycsecs_indices = ycsecs_indices,
+
+        gen_data_01_xcsec_func = gen_data_xcsec,
+        gen_data_01_ycsec_func = gen_data_ycsec,
+
+        gen_data_02_xcsec_func = gen_data_xcsec,
+        gen_data_02_ycsec_func = gen_data_ycsec,
+
+        gen_data_03_xcsec_func = gen_data_xcsec,
+        gen_data_03_ycsec_func = gen_data_ycsec,
+
+        title_data_01 = title_rho_tot,
+        title_data_02 = title_rho_a,
+        title_data_03 = title_rho_b,
+
+        label_x = label_x,
+        label_y = label_y,
+
+        label_data_01 = label_rho_tot,
+        label_data_02 = label_rho_a,
+        label_data_03 = label_rho_b,
+
+        legend_data_01 = legend_rho_tot,
+        legend_data_02 = legend_rho_a,
+        legend_data_03 = legend_rho_b,
+
+        gen_data_01_xcsec_label_func = gen_data_xcsec_label,
+        gen_data_01_ycsec_label_func = gen_data_ycsec_label,
+
+        gen_data_02_xcsec_label_func = gen_data_xcsec_label,
+        gen_data_02_ycsec_label_func = gen_data_ycsec_label,
+
+        gen_data_03_xcsec_label_func = gen_data_xcsec_label,
+        gen_data_03_ycsec_label_func = gen_data_ycsec_label,
+    )
 
     # save plot:
 
@@ -563,7 +1457,7 @@ def plot_normal_density(
     p.fig.savefig(fname = out_file, dpi = dpi)
 
 
-def plot_pairing_gap_function(
+def __plot_02_pairing_gap_function(
     out_file: str,
     dpi: int,
 
@@ -573,17 +1467,17 @@ def plot_pairing_gap_function(
     nx: int,
     ny: int,
 
-    x: List[float],
-    y: List[float],
+    x: np.ndarray,
+    y: np.ndarray,
 
     delta_norm: np.ndarray,
 
     title_delta_norm: str,
 
-    lable_x: str,
-    lable_y: str,
+    label_x: str,
+    label_y: str,
 
-    lable_delta_norm: str,
+    label_delta_norm: str,
 
     legend_delta_norm: str,
 
@@ -595,21 +1489,44 @@ def plot_pairing_gap_function(
         rows_h_ratios = [1],
     )
 
-    x_csecs_00 = gen_csecs_indices(nx/2)
-    y_csecs_00 = gen_csecs_indices(ny/2)
+    xcsecs_indices_00 = gen_csecs_indices(nx/2)
+    ycsecs_indices_00 = gen_csecs_indices(ny/2)
 
-    get_data_x_csec = lambda data, x: data[x, :]
-    get_data_y_csec = lambda data, y: data[:, y]
+    gen_data_xcsec = lambda data, x: data[x, :]
+    gen_data_ycsec = lambda data, y: data[:, y]
 
-    get_data_x_csec_label = lambda legend, x, i: f"{legend}(x = {x[i]}, y)"
-    get_data_y_csec_label = lambda legend, y, i: f"{legend}(x, y = {y[i]})"
+    gen_data_xcsec_label = lambda legend, x, i: f"{legend}(x = {x[i]}, y)"
+    gen_data_ycsec_label = lambda legend, y, i: f"{legend}(x, y = {y[i]})"
 
-    # plot data:
-    # - delta
+    gen_grid_of_subplots_of_01_series_of_2d_data_real(
+        fig = p.fig,
+        ax = p.ax,
 
-    plot_pseudocolor(p.fig, p.ax[0][0], x, y, delta_norm, title_delta_norm, lable_x, lable_y)
-    plot_csecs_of_2d_data(p.fig, p.ax[0][1], y_csecs_00, x, delta_norm, get_data_y_csec, title_delta_norm, lable_x, lable_delta_norm, legend_delta_norm, get_data_y_csec_label)
-    plot_csecs_of_2d_data(p.fig, p.ax[0][2], x_csecs_00, y, delta_norm, get_data_x_csec, title_delta_norm, lable_y, lable_delta_norm, legend_delta_norm, get_data_x_csec_label)
+        ax_col_offset = 0,
+
+        x = x,
+        y = y,
+
+        data = delta_norm,
+
+        data_xcsecs_indices = xcsecs_indices_00,
+        data_ycsecs_indices = ycsecs_indices_00,
+
+        gen_data_xcsec_func = gen_data_xcsec,
+        gen_data_ycsec_func = gen_data_ycsec,
+
+        title_data = title_delta_norm,
+
+        label_x = label_x,
+        label_y = label_y,
+
+        label_data = label_delta_norm,
+
+        legend_data = legend_delta_norm,
+
+        gen_data_xcsec_label_func = gen_data_xcsec_label,
+        gen_data_ycsec_label_func = gen_data_ycsec_label,
+    )
 
     # save plot:
 
@@ -617,7 +1534,7 @@ def plot_pairing_gap_function(
     p.fig.savefig(fname = out_file, dpi = dpi)
 
 
-def plot_current_density(
+def __plot_03_current_density(
     out_file: str,
     dpi: int,
 
@@ -627,8 +1544,8 @@ def plot_current_density(
     nx: int,
     ny: int,
 
-    x: List[float],
-    y: List[float],
+    x: np.ndarray,
+    y: np.ndarray,
 
     j_tot_norm: np.ndarray,
     j_tot_x: np.ndarray,
@@ -657,8 +1574,8 @@ def plot_current_density(
     title_j_b_x: str,
     title_j_b_y: str,
 
-    lable_x: str,
-    lable_y: str,
+    label_x: str,
+    label_y: str,
 
     label_j_tot_norm: str,
     label_j_tot_x: str,
@@ -697,19 +1614,19 @@ def plot_current_density(
         ]
     )
 
-    x_csecs_00 = gen_csecs_indices(nx/2)
-    x_csecs_01 = gen_csecs_indices(nx/2, [0.75, 0.875, 0.95])
-    x_csecs_02 = gen_csecs_indices(nx/2, [0.75, 0.875, 0.95], [1.05, 1.125, 1.25])
+    xcsecs_indices_00 = gen_csecs_indices(nx/2)
+    xcsecs_indices_01 = gen_csecs_indices(nx/2, [0.75, 0.875, 0.95])
+    xcsecs_indices_02 = gen_csecs_indices(nx/2, [0.75, 0.875, 0.95], [1.05, 1.125, 1.25])
 
-    y_csecs_00 = gen_csecs_indices(ny/2)
-    y_csecs_01 = gen_csecs_indices(ny/2, [0.75, 0.875, 0.95])
-    y_csecs_02 = gen_csecs_indices(ny/2, [0.75, 0.875, 0.95], [1.05, 1.125, 1.25])
+    ycsecs_indices_00 = gen_csecs_indices(ny/2)
+    ycsecs_indices_01 = gen_csecs_indices(ny/2, [0.75, 0.875, 0.95])
+    ycsecs_indices_02 = gen_csecs_indices(ny/2, [0.75, 0.875, 0.95], [1.05, 1.125, 1.25])
 
-    get_data_x_csec = lambda data, x: data[x, :]
-    get_data_y_csec = lambda data, y: data[:, y]
+    gen_data_xcsec = lambda data, x: data[:, x]
+    gen_data_ycsec = lambda data, y: data[y, :]
 
-    get_data_x_csec_label = lambda legend, x, i: f"{legend}(x = {x[i]}, y)"
-    get_data_y_csec_label = lambda legend, y, i: f"{legend}(x, y = {y[i]})"
+    gen_data_xcsec_label = lambda legend, x, i: f"{legend}(x = {x[i]}, y)"
+    gen_data_ycsec_label = lambda legend, y, i: f"{legend}(x, y = {y[i]})"
 
     vector_stride = 3
     vector_scale = 0.0005
@@ -722,56 +1639,56 @@ def plot_current_density(
     # plot data:
     # - j_total
 
-    plot_vectors(p.fig, p.ax[0][0], x, y, TRANSPOSE(j_tot_x), TRANSPOSE(j_tot_y), vector_stride, vector_scale, title_j_tot, lable_x, lable_y)
-    plot_streamlines(p.fig, p.ax[0][1], x, y, TRANSPOSE(j_tot_x), TRANSPOSE(j_tot_y), title_j_tot, lable_x, lable_y)
+    gen_subplot_of_vectors(p.fig, p.ax[0][0], x, y, j_tot_x, j_tot_y, vector_stride, vector_scale, title_j_tot, label_x, label_y)
+    gen_subplot_of_streamlines(p.fig, p.ax[0][1], x, y, j_tot_x, j_tot_y, title_j_tot, label_x, label_y)
 
-    plot_pseudocolor(p.fig, p.ax[1][0], x, y, TRANSPOSE(j_tot_norm), title_j_tot_norm, lable_x, lable_y)
-    plot_csecs_of_2d_data(p.fig, p.ax[1][1], y_csecs_00, x, j_tot_norm, get_data_y_csec, title_j_tot_norm, lable_x, label_j_tot_norm, legend_j_tot_norm, get_data_y_csec_label)
-    plot_csecs_of_2d_data(p.fig, p.ax[1][2], x_csecs_00, y, j_tot_norm, get_data_x_csec, title_j_tot_norm, lable_y, label_j_tot_norm, legend_j_tot_norm, get_data_x_csec_label)
+    gen_subplot_of_pseudocolor(p.fig, p.ax[1][0], x, y, j_tot_norm, title_j_tot_norm, label_x, label_y)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[1][1], x, j_tot_norm, ycsecs_indices_00, gen_data_ycsec, title_j_tot_norm, label_x, label_j_tot_norm, legend_j_tot_norm, gen_data_ycsec_label)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[1][2], y, j_tot_norm, xcsecs_indices_00, gen_data_xcsec, title_j_tot_norm, label_y, label_j_tot_norm, legend_j_tot_norm, gen_data_xcsec_label)
 
-    plot_pseudocolor(p.fig, p.ax[2][0], x, y, TRANSPOSE(j_tot_x), title_j_tot_x, lable_x, lable_y)
-    plot_csecs_of_2d_data(p.fig, p.ax[2][1], y_csecs_02, x, j_tot_x, get_data_y_csec, title_j_tot_x, lable_x, label_j_tot_x, legend_j_tot_x, get_data_y_csec_label)
-    plot_csecs_of_2d_data(p.fig, p.ax[2][2], x_csecs_01, y, j_tot_x, get_data_x_csec, title_j_tot_x, lable_y, label_j_tot_x, legend_j_tot_x, get_data_x_csec_label)
+    gen_subplot_of_pseudocolor(p.fig, p.ax[2][0], x, y, j_tot_x, title_j_tot_x, label_x, label_y)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[2][1], x, j_tot_x, ycsecs_indices_02, gen_data_ycsec, title_j_tot_x, label_x, label_j_tot_x, legend_j_tot_x, gen_data_ycsec_label)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[2][2], y, j_tot_x, xcsecs_indices_01, gen_data_xcsec, title_j_tot_x, label_y, label_j_tot_x, legend_j_tot_x, gen_data_xcsec_label)
 
-    plot_pseudocolor(p.fig, p.ax[3][0], x, y, TRANSPOSE(j_tot_y), title_j_tot_y, lable_x, lable_y)
-    plot_csecs_of_2d_data(p.fig, p.ax[3][1], y_csecs_01, x, j_tot_y, get_data_y_csec, title_j_tot_y, lable_x, label_j_tot_y, legend_j_tot_y, get_data_y_csec_label)
-    plot_csecs_of_2d_data(p.fig, p.ax[3][2], x_csecs_02, y, j_tot_y, get_data_x_csec, title_j_tot_y, lable_y, label_j_tot_y, legend_j_tot_y, get_data_x_csec_label)
+    gen_subplot_of_pseudocolor(p.fig, p.ax[3][0], x, y, j_tot_y, title_j_tot_y, label_x, label_y)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[3][1], x, j_tot_y, ycsecs_indices_01, gen_data_ycsec, title_j_tot_y, label_x, label_j_tot_y, legend_j_tot_y, gen_data_ycsec_label)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[3][2], y, j_tot_y, xcsecs_indices_02, gen_data_xcsec, title_j_tot_y, label_y, label_j_tot_y, legend_j_tot_y, gen_data_xcsec_label)
 
     # plot data:
     # - j_a
 
-    plot_vectors(p.fig, p.ax[4][0], x, y, TRANSPOSE(j_a_x), TRANSPOSE(j_a_y), vector_stride, vector_scale, title_j_a, lable_x, lable_y)
-    plot_streamlines(p.fig, p.ax[4][1], x, y, TRANSPOSE(j_a_x), TRANSPOSE(j_a_y), title_j_a, lable_x, lable_y)
+    gen_subplot_of_vectors(p.fig, p.ax[4][0], x, y, j_a_x, j_a_y, vector_stride, vector_scale, title_j_a, label_x, label_y)
+    gen_subplot_of_streamlines(p.fig, p.ax[4][1], x, y, j_a_x, j_a_y, title_j_a, label_x, label_y)
 
-    plot_pseudocolor(p.fig, p.ax[5][0], x, y, TRANSPOSE(j_a_norm), title_j_a_norm, lable_x, lable_y)
-    plot_csecs_of_2d_data(p.fig, p.ax[5][1], y_csecs_00, x, j_a_norm, get_data_y_csec, title_j_a_norm, lable_x, label_j_a_norm, legend_j_a_norm, get_data_y_csec_label)
-    plot_csecs_of_2d_data(p.fig, p.ax[5][2], x_csecs_00, y, j_a_norm, get_data_x_csec, title_j_a_norm, lable_y, label_j_a_norm, legend_j_a_norm, get_data_x_csec_label)
+    gen_subplot_of_pseudocolor(p.fig, p.ax[5][0], x, y, j_a_norm, title_j_a_norm, label_x, label_y)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[5][1], x, j_a_norm, ycsecs_indices_00, gen_data_ycsec, title_j_a_norm, label_x, label_j_a_norm, legend_j_a_norm, gen_data_ycsec_label)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[5][2], y, j_a_norm, xcsecs_indices_00, gen_data_xcsec, title_j_a_norm, label_y, label_j_a_norm, legend_j_a_norm, gen_data_xcsec_label)
 
-    plot_pseudocolor(p.fig, p.ax[6][0], x, y, TRANSPOSE(j_a_x), title_j_a_x, lable_x, lable_y)
-    plot_csecs_of_2d_data(p.fig, p.ax[6][1], y_csecs_02, x, j_a_x, get_data_y_csec, title_j_a_x, lable_x, label_j_a_x, legend_j_a_x, get_data_y_csec_label)
-    plot_csecs_of_2d_data(p.fig, p.ax[6][2], x_csecs_01, y, j_a_x, get_data_x_csec, title_j_a_x, lable_y, label_j_a_x, legend_j_a_x, get_data_x_csec_label)
+    gen_subplot_of_pseudocolor(p.fig, p.ax[6][0], x, y, j_a_x, title_j_a_x, label_x, label_y)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[6][1], x, j_a_x, ycsecs_indices_02, gen_data_ycsec, title_j_a_x, label_x, label_j_a_x, legend_j_a_x, gen_data_ycsec_label)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[6][2], y, j_a_x, xcsecs_indices_01, gen_data_xcsec, title_j_a_x, label_y, label_j_a_x, legend_j_a_x, gen_data_xcsec_label)
 
-    plot_pseudocolor(p.fig, p.ax[7][0], x, y, TRANSPOSE(j_a_y), title_j_a_y, lable_x, lable_y)
-    plot_csecs_of_2d_data(p.fig, p.ax[7][1], y_csecs_01, x, j_a_y, get_data_y_csec, title_j_a_y, lable_x, label_j_a_y, legend_j_a_y, get_data_y_csec_label)
-    plot_csecs_of_2d_data(p.fig, p.ax[7][2], x_csecs_02, y, j_a_y, get_data_x_csec, title_j_a_y, lable_y, label_j_a_y, legend_j_a_y, get_data_x_csec_label)
+    gen_subplot_of_pseudocolor(p.fig, p.ax[7][0], x, y, j_a_y, title_j_a_y, label_x, label_y)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[7][1], x, j_a_y, ycsecs_indices_01, gen_data_ycsec, title_j_a_y, label_x, label_j_a_y, legend_j_a_y, gen_data_ycsec_label)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[7][2], y, j_a_y, xcsecs_indices_02, gen_data_xcsec, title_j_a_y, label_y, label_j_a_y, legend_j_a_y, gen_data_xcsec_label)
 
     # plot data:
     # - j_b
 
-    plot_vectors(p.fig, p.ax[8][0], x, y, TRANSPOSE(j_b_x), TRANSPOSE(j_b_y), vector_stride, vector_scale, title_j_b, lable_x, lable_y)
-    plot_streamlines(p.fig, p.ax[8][1], x, y, TRANSPOSE(j_b_x), TRANSPOSE(j_b_y), title_j_b, lable_x, lable_y)
+    gen_subplot_of_vectors(p.fig, p.ax[8][0], x, y, j_b_x, j_b_y, vector_stride, vector_scale, title_j_b, label_x, label_y)
+    gen_subplot_of_streamlines(p.fig, p.ax[8][1], x, y, j_b_x, j_b_y, title_j_b, label_x, label_y)
 
-    plot_pseudocolor(p.fig, p.ax[9][0], x, y, TRANSPOSE(j_b_norm), title_j_b_norm, lable_x, lable_y)
-    plot_csecs_of_2d_data(p.fig, p.ax[9][1], y_csecs_00, x, j_b_norm, get_data_y_csec, title_j_b_norm, lable_x, label_j_b_norm, legend_j_b_norm, get_data_y_csec_label)
-    plot_csecs_of_2d_data(p.fig, p.ax[9][2], x_csecs_00, y, j_b_norm, get_data_x_csec, title_j_b_norm, lable_y, label_j_b_norm, legend_j_b_norm, get_data_x_csec_label)
+    gen_subplot_of_pseudocolor(p.fig, p.ax[9][0], x, y, j_b_norm, title_j_b_norm, label_x, label_y)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[9][1], x, j_b_norm, ycsecs_indices_00, gen_data_ycsec, title_j_b_norm, label_x, label_j_b_norm, legend_j_b_norm, gen_data_ycsec_label)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[9][2], y, j_b_norm, xcsecs_indices_00, gen_data_xcsec, title_j_b_norm, label_y, label_j_b_norm, legend_j_b_norm, gen_data_xcsec_label)
 
-    plot_pseudocolor(p.fig, p.ax[10][0], x, y, TRANSPOSE(j_b_x), title_j_b_x, lable_x, lable_y)
-    plot_csecs_of_2d_data(p.fig, p.ax[10][1], y_csecs_02, x, j_b_x, get_data_y_csec, title_j_b_x, lable_x, label_j_b_x, legend_j_b_x, get_data_y_csec_label)
-    plot_csecs_of_2d_data(p.fig, p.ax[10][2], x_csecs_01, y, j_b_x, get_data_x_csec, title_j_b_x, lable_y, label_j_b_x, legend_j_b_x, get_data_x_csec_label)
+    gen_subplot_of_pseudocolor(p.fig, p.ax[10][0], x, y, j_b_x, title_j_b_x, label_x, label_y)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[10][1], x, j_b_x, ycsecs_indices_02, gen_data_ycsec, title_j_b_x, label_x, label_j_b_x, legend_j_b_x, gen_data_ycsec_label)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[10][2], y, j_b_x, xcsecs_indices_01, gen_data_xcsec, title_j_b_x, label_y, label_j_b_x, legend_j_b_x, gen_data_xcsec_label)
 
-    plot_pseudocolor(p.fig, p.ax[11][0], x, y, TRANSPOSE(j_b_y), title_j_b_y, lable_x, lable_y)
-    plot_csecs_of_2d_data(p.fig, p.ax[11][1], y_csecs_01, x, j_b_y, get_data_y_csec, title_j_b_y, lable_x, label_j_b_y, legend_j_b_y, get_data_y_csec_label)
-    plot_csecs_of_2d_data(p.fig, p.ax[11][2], x_csecs_02, y, j_b_y, get_data_x_csec, title_j_b_y, lable_y, label_j_b_y, legend_j_b_y, get_data_x_csec_label)
+    gen_subplot_of_pseudocolor(p.fig, p.ax[11][0], x, y, j_b_y, title_j_b_y, label_x, label_y)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[11][1], x, j_b_y, ycsecs_indices_01, gen_data_ycsec, title_j_b_y, label_x, label_j_b_y, legend_j_b_y, gen_data_ycsec_label)
+    gen_subplot_of_csecs_of_2d_data_real(p.fig, p.ax[11][2], y, j_b_y, xcsecs_indices_02, gen_data_xcsec, title_j_b_y, label_y, label_j_b_y, legend_j_b_y, gen_data_xcsec_label)
 
     # save plot:
 
@@ -779,31 +1696,20 @@ def plot_current_density(
     p.fig.savefig(fname = out_file, dpi = dpi)
 
 
-# start:
+# plot systen properties:
 
 
-def main() -> int:
-    """
-    entry point
-    """
+def plot_01_normal_density(
+    out_dir: str,
+    dpi: int,
 
-    in_dir = "/workspace/results/data"
-    in_file = in_dir + "/st-vortex-recreation-01/sv-ddcc05p00-T0p05.wtxt"
-    wdata = WData.load(in_file)
+    subplot_w: int,
+    subplot_h: int,
 
-    iteration = -1
-    parsed = ParsedWData(wdata, iteration)
-
-    subplot_w = 7
-    subplot_h = 7
-
-    out_dir = "/workspace/results/analysis"
-    dpi = 300
-
-    # plot:
-
-    plot_normal_density(
-        out_file = out_dir + "/plot_normal_densit.png",
+    parsed: ParsedWData
+) -> None:
+    __plot_01_normal_density(
+        out_file = out_dir + "/plot_01_normal_densit.png",
         dpi = dpi,
 
         subplot_w = subplot_w,
@@ -823,20 +1729,20 @@ def main() -> int:
         title_rho_a = 'rho_a',
         title_rho_b = 'rho_b',
 
-        lable_x = 'x',
-        lable_y = 'y',
+        label_x = 'x',
+        label_y = 'y',
 
-        lable_rho_tot = 'rho_tot',
-        lable_rho_a = 'rho_a',
-        lable_rho_b = 'rho_b',
+        label_rho_tot = 'rho_tot',
+        label_rho_a = 'rho_a',
+        label_rho_b = 'rho_b',
 
         legend_rho_tot = 'rho_tot',
         legend_rho_a = 'rho_a',
         legend_rho_b = 'rho_b',
     )
 
-    plot_normal_density(
-        out_file = out_dir + "/plot_normal_densit_normalized.png",
+    __plot_01_normal_density(
+        out_file = out_dir + "/plot_01_normal_densit_normalized.png",
         dpi = dpi,
 
         subplot_w = subplot_w,
@@ -856,20 +1762,30 @@ def main() -> int:
         title_rho_a = 'rho_a / rho_a_0',
         title_rho_b = 'rho_b / rho_b_0',
 
-        lable_x = 'x',
-        lable_y = 'y',
+        label_x = 'x',
+        label_y = 'y',
 
-        lable_rho_tot = 'rho_total / rho_total_0',
-        lable_rho_a = 'rho_a / rho_a_0',
-        lable_rho_b = 'rho_b / rho_b_0',
+        label_rho_tot = 'rho_total / rho_total_0',
+        label_rho_a = 'rho_a / rho_a_0',
+        label_rho_b = 'rho_b / rho_b_0',
 
         legend_rho_tot = 'rho_total / rho_total_0 ',
         legend_rho_a = 'rho_a / rho_a_0 ',
         legend_rho_b = 'rho_b / rho_b_0 ',
     )
 
-    plot_pairing_gap_function(
-        out_file = out_dir + "/plot_pairing_gap_function.png",
+
+def plot_02_pairing_gap_function(
+    out_dir: str,
+    dpi: int,
+
+    subplot_w: int,
+    subplot_h: int,
+
+    parsed: ParsedWData
+) -> None:
+    __plot_02_pairing_gap_function(
+        out_file = out_dir + "/plot_02_pairing_gap_function.png",
         dpi = dpi,
 
         subplot_w = subplot_w,
@@ -885,16 +1801,16 @@ def main() -> int:
 
         title_delta_norm = '|Δ|',
 
-        lable_x = 'x',
-        lable_y = 'y',
+        label_x = 'x',
+        label_y = 'y',
 
-        lable_delta_norm = '|Δ|',
+        label_delta_norm = '|Δ|',
 
         legend_delta_norm = '|Δ|',
     )
 
-    plot_pairing_gap_function(
-        out_file = out_dir + "/plot_pairing_gap_function_normalized.png",
+    __plot_02_pairing_gap_function(
+        out_file = out_dir + "/plot_02_pairing_gap_function_normalized.png",
         dpi = dpi,
 
         subplot_w = subplot_w,
@@ -910,16 +1826,26 @@ def main() -> int:
 
         title_delta_norm = '|Δ| / |Δ_0|',
 
-        lable_x = 'x',
-        lable_y = 'y',
+        label_x = 'x',
+        label_y = 'y',
 
-        lable_delta_norm = '|Δ| / |Δ_0|',
+        label_delta_norm = '|Δ| / |Δ_0|',
 
         legend_delta_norm = '|Δ| / |Δ_0| ',
     )
 
-    plot_current_density(
-        out_file = out_dir + "/plot_current_density.png",
+
+def plot_03_current_density(
+    out_dir: str,
+    dpi: int,
+
+    subplot_w: int,
+    subplot_h: int,
+
+    parsed: ParsedWData
+) -> None:
+    __plot_03_current_density(
+        out_file = out_dir + "/plot_03_current_density.png",
         dpi = dpi,
 
         subplot_w = subplot_w,
@@ -958,8 +1884,8 @@ def main() -> int:
         title_j_b_x = 'j_b_x',
         title_j_b_y = 'j_b_y',
 
-        lable_x = 'x',
-        lable_y = 'y',
+        label_x = 'x',
+        label_y = 'y',
 
         label_j_tot_norm = '|j_total|',
         label_j_tot_x = 'j_total_x',
@@ -984,6 +1910,54 @@ def main() -> int:
         legend_j_b_norm = '|j_b|',
         legend_j_b_x = 'j_b_x',
         legend_j_b_y = 'j_b_y',
+    )
+
+
+# start:
+
+
+def main() -> int:
+    """
+    entry point
+    """
+
+    in_dir = "/workspace/results/data"
+    in_file = in_dir + "/st-vortex-recreation-01/sv-ddcc05p00-T0p05.wtxt"
+    wdata = WData.load(in_file)
+
+    iteration = -1
+    parsed = ParsedWData(wdata, iteration)
+
+    subplot_w = 7
+    subplot_h = 7
+
+    out_dir = "/workspace/results/analysis"
+    dpi = 300
+
+    # plot:
+
+    plot_01_normal_density(
+        out_dir = out_dir,
+        dpi = dpi,
+        subplot_w = subplot_w,
+        subplot_h = subplot_h,
+        parsed = parsed
+    )
+
+    plot_02_pairing_gap_function(
+        out_dir = out_dir,
+        dpi = dpi,
+        subplot_w = subplot_w,
+        subplot_h = subplot_h,
+        parsed = parsed
+    )
+
+    plot_03_current_density(
+        out_dir = out_dir,
+        dpi = dpi,
+        subplot_w = subplot_w,
+        subplot_h = subplot_h,
+        parsed = parsed
     )
 
     return 0
