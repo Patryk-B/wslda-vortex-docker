@@ -3820,7 +3820,7 @@ def plot_11_A(
         A_b_y = parsed.A_b_y,
 
         stride = 3,
-        scale = 0.0005,
+        scale = 0.005,
 
         title_A_tot = 'A_total',
         title_A_tot_norm = '|A_total|',
