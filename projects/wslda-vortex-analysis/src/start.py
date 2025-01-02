@@ -3,7 +3,7 @@
 from enum import Enum
 from matplotlib import ticker
 from scipy.interpolate import interp1d
-from typing import Any, Union, Tuple, List, Set, Dict, Callable
+from typing import Any, Union, Tuple, List, Set, Dict, DefaultDict, Iterator, Callable
 from wdata.io import WData, Var
 import matplotlib
 import matplotlib.axes
@@ -15,12 +15,29 @@ import numpy as np
 import numpy.typing as np_typing
 import pprint
 import sys
+from collections import defaultdict, namedtuple
+from itertools import groupby
 import traceback
 import logging
+import paramiko
+import tempfile
+import re
+
+import json
+
+import os
+import subprocess
+import time
+import shutil
+
+import subprocess
+import os
+import time
 
 #! ---- . ---- ---- ---- ---- . ----
 #! helpers:
 #! ---- . ---- ---- ---- ---- . ----
+
 
 class Axis(int, Enum):
     X = 0
@@ -34,15 +51,118 @@ class Component(int, Enum):
     Z = 2
 
 
-class ParsedWData(object):
+class IJRPoint:
     def __init__(
         self,
-        wdata: WData,
-        iteration: int
+        i: int,
+        j: int,
+        x: float,
+        y: float,
+        r: float,
+    ):
+        self.i: int = i
+        self.j: int = j
+        self.x: float = x
+        self.y: float = y
+        self.r: float = r
+
+    def __str__(self):
+        return f"(i: {self.i:5}, j: {self.j:5}, x: {self.x:10}, y: {self.y:10}, r: {self.r:10})"
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __lt__(self, other):
+        return (self.r, self.i, self.j) < (other.r, other.i, other.j)
+
+    def __le__(self, other):
+        return (self.r, self.i, self.j) <= (other.r, other.i, other.j)
+
+    def __eq__(self, other):
+        return (self.r, self.i, self.j) == (other.r, other.i, other.j)
+
+    def __ne__(self, other):
+        return (self.r, self.i, self.j) != (other.r, other.i, other.j)
+
+    def __gt__(self, other):
+        return (self.r, self.i, self.j) > (other.r, other.i, other.j)
+
+    def __ge__(self, other):
+        return (self.r, self.i, self.j) >= (other.r, other.i, other.j)
+
+
+class IJRGrid:
+    def __init__(self, x: List[float], y: List[float]):
+        # Initialize grid
+        self.__x = x
+        self.__y = y
+        self.__grid = np.array([])
+        for i in range(len(self.__x)):
+            for j in range(len(self.__y)):
+                x = self.__x[i]
+                y = self.__y[j]
+                r = np.sqrt(x ** 2 + y ** 2)
+                self.__grid = np.append(
+                    self.__grid,
+                    IJRPoint(i, j, x, y, r)
+                )
+
+        # Sort grid by 'r' attribute
+        self.__grid = np.sort(self.__grid)
+
+        # Group by 'r'
+        self.__grid_dict = defaultdict(lambda: np.array([], dtype=object))
+        for point in self.__grid:
+            self.__grid_dict[point.r] = np.append(self.__grid_dict[point.r], point)
+
+        # Convert keys (r values) to a numpy array
+        self.__r = np.array(list(self.__grid_dict.keys()))
+
+        # Convert values (lists of IJRPoint) to a numpy array
+        self.__ij = np.array(list(self.__grid_dict.values()), dtype=object)
+
+    # Length based on unique 'r' values
+    def __len__(self):
+        return len(self.__r)
+
+    # Iterator over all groups of points
+    def __iter__(self) -> Iterator[Tuple[float, np.array]]:
+        for r, points_grouped_by_r in zip(self.__r, self.__ij):
+            yield (r, points_grouped_by_r)
+
+    def __getitem__(self, i: int) -> Tuple[float, np.array]:
+        if not isinstance(i, int):
+            raise TypeError("Index must be an integer")
+        if i < 0 or i >= len(self):
+            raise IndexError("Index out of range")
+        return (self.__r[i], self.__ij[i])
+
+    def get_points_by_radius(
+        self,
+        radius: float,
+        radius_precision: float = 0.01
+    ):
+        i = np.argmin(np.abs(self.__r - radius))
+        r = self.__r[i]
+
+        if np.abs(r - radius) <= radius_precision:
+            return self.__ij[i]
+        else:
+            return None
+
+
+class ParsedData(object):
+    def __init__(
+        self,
+        data_dir,
     ):
         #! ---- . ---- ---- ---- ---- . ----
-        #! loaded:
+        #! load
         #! ---- . ---- ---- ---- ---- . ----
+
+        wdata = self.__load_wdata(data_dir)
+        input = self.__load_input(data_dir)
+        iteration = -1
 
         #? ---- . ---- ---- ---- ---- . ----
         #? grid:
@@ -51,50 +171,31 @@ class ParsedWData(object):
         self.nx: int = wdata.Nxyz[Axis.X]
         self.ny: int = wdata.Nxyz[Axis.Y]
 
-        print(f"nx = {self.nx}")
-        print(f"ny = {self.ny}")
-        print()
-
         self.nx_half: int = int(self.nx / 2)
         self.ny_half: int = int(self.ny / 2)
-
-        print(f"nx_half = {self.nx_half}")
-        print(f"ny_half = {self.ny_half}")
-        print()
 
         self.nx_fourth: int = int(self.nx_half / 2)
         self.ny_fourth: int = int(self.ny_half / 2)
 
-        print(f"nx_fourth = {self.nx_fourth}")
-        print(f"ny_fourth = {self.ny_fourth}")
-        print()
-
         self.nx_eighth: int = int(self.nx_fourth / 2)
         self.ny_eighth: int = int(self.ny_fourth / 2)
 
-        print(f"nx_eighth = {self.nx_eighth}")
-        print(f"ny_eighth = {self.ny_eighth}")
-        print()
-
-        self.nx_sixteenthh: int = int(self.nx_eighth / 2)
-        self.ny_sixteenthh: int = int(self.ny_eighth / 2)
-
-        print(f"nx_sixteenthh = {self.nx_sixteenthh}")
-        print(f"ny_sixteenthh = {self.ny_sixteenthh}")
-        print()
+        self.nx_sixteenth: int = int(self.nx_eighth / 2)
+        self.ny_sixteenth: int = int(self.ny_eighth / 2)
 
         self.dx: float = wdata.dxyz[Axis.X]
         self.dy: float = wdata.dxyz[Axis.Y]
-
-        print(f"dx = {self.dx}")
-        print(f"dy = {self.dy}")
-        print()
 
         self.x: np.ndarray = wdata.xyz[Axis.X]
         self.y: np.ndarray = wdata.xyz[Axis.Y]
 
         self.x_flat: np.ndarray = self.x.flatten()
         self.y_flat: np.ndarray = self.y.flatten()
+
+        self.ijrGrid = IJRGrid(
+            self.x_flat,
+            self.y_flat
+        )
 
         #? ---- . ---- ---- ---- ---- . ----
         #? radius:
@@ -111,41 +212,21 @@ class ParsedWData(object):
         #?       = 20
         #? ---- . ---- ---- ---- ---- . ----
 
-        self.x_index_v = self.nx_half
-        self.y_index_v = self.ny_half
+        self.x_v_index = self.nx_half
+        self.y_v_index = self.ny_half
 
-        self.x_index_0 = self.nx_half + self.nx_fourth
-        self.y_index_0 = self.ny_half + self.ny_fourth
+        self.x_0_index = self.nx_half + self.nx_fourth
+        self.y_0_index = self.ny_half + self.ny_fourth
 
-        print(f"x_index_v = {self.x_index_v}")
-        print(f"y_index_v = {self.y_index_v}")
-        print()
-        print(f"x_index_0 = {self.x_index_0}")
-        print(f"y_index_0 = {self.y_index_0}")
-        print()
+        self.x_v = self.x_flat[self.x_v_index]
+        self.y_v = self.y_flat[self.y_v_index]
 
-        self.x_v = self.x_flat[self.x_index_v]
-        self.y_v = self.y_flat[self.y_index_v]
-
-        self.x_0 = self.x_flat[self.x_index_0]
-        self.y_0 = self.y_flat[self.y_index_0]
-
-        print(f"x_v = {self.x_v}")
-        print(f"y_v = {self.y_v}")
-        print()
-        print(f"x_0 = {self.x_0}")
-        print(f"y_0 = {self.y_0}")
-        print()
+        self.x_0 = self.x_flat[self.x_0_index]
+        self.y_0 = self.y_flat[self.y_0_index]
 
         self.r_v = self.x_v
         self.r_0 = self.x_0
         self.r_precision = 0.01
-
-        print(f"r_v = {self.r_v}")
-        print(f"r_0 = {self.r_0}")
-        print()
-        print(f"r_precision = {self.r_precision}")
-        print()
 
         #? ---- . ---- ---- ---- ---- . ----
         #? rho (x,y) -> Real
@@ -178,22 +259,16 @@ class ParsedWData(object):
         # ---- . ---- ---- ---- ---- . ----
 
         self.rho_a_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.rho_a,
             self.r_0,
             self.r_precision
         )
         self.rho_b_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.rho_b,
             self.r_0,
             self.r_precision
         )
         self.rho_tot_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.rho_tot,
             self.r_0,
             self.r_precision
@@ -219,8 +294,6 @@ class ParsedWData(object):
         # ---- . ---- ---- ---- ---- . ----
 
         self.delta_norm_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.delta_norm,
             self.r_0,
             self.r_precision
@@ -285,8 +358,6 @@ class ParsedWData(object):
         # ---- . ---- ---- ---- ---- . ----
 
         self.nu_norm_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.nu_norm,
             self.r_0,
             self.r_precision
@@ -307,22 +378,16 @@ class ParsedWData(object):
         # ---- . ---- ---- ---- ---- . ----
 
         self.tau_a_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.tau_a,
             self.r_0,
             self.r_precision
         )
         self.tau_b_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.tau_b,
             self.r_0,
             self.r_precision
         )
         self.tau_tot_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.tau_tot,
             self.r_0,
             self.r_precision
@@ -343,22 +408,16 @@ class ParsedWData(object):
         # ---- . ---- ---- ---- ---- . ----
 
         self.V_a_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.V_a,
             self.r_0,
             self.r_precision
         )
         self.V_b_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.V_b,
             self.r_0,
             self.r_precision
         )
         self.V_tot_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.V_tot,
             self.r_0,
             self.r_precision
@@ -379,22 +438,16 @@ class ParsedWData(object):
         # ---- . ---- ---- ---- ---- . ----
 
         self.V_ext_a_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.V_ext_a,
             self.r_0,
             self.r_precision
         )
         self.V_ext_b_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.V_ext_b,
             self.r_0,
             self.r_precision
         )
         self.V_ext_tot_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.V_ext_tot,
             self.r_0,
             self.r_precision
@@ -414,8 +467,6 @@ class ParsedWData(object):
         # ---- . ---- ---- ---- ---- . ----
 
         self.delta_ext_norm_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.delta_ext_norm,
             self.r_0,
             self.r_precision
@@ -456,22 +507,16 @@ class ParsedWData(object):
         # ---- . ---- ---- ---- ---- . ----
 
         self.alpha_a_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.alpha_a,
             self.r_0,
             self.r_precision
         )
         self.alpha_b_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.alpha_b,
             self.r_0,
             self.r_precision
         )
         self.alpha_tot_0: np.float64 = self.__calc_arithmetic_mean_over_circle(
-            self.x_flat,
-            self.y_flat,
             self.alpha_tot,
             self.r_0,
             self.r_precision
@@ -502,25 +547,10 @@ class ParsedWData(object):
 
         #! ---- . ---- ---- ---- ---- . ----
         #! calculated:
+        #
+        #! TODO:
+        #! - plot following as a paraneter of unctions of r
         #! ---- . ---- ---- ---- ---- . ----
-
-        # ---- . ---- ---- ---- ---- . ----
-        # k_F
-        # - fermi momentum
-        # ---- . ---- ---- ---- ---- . ----
-
-        self.k_F: np.float64 = np.cbrt(3.0 * (np.pi ** 2) * self.rho_tot_0)
-        print(f"k_F = {self.k_F}")
-        print()
-
-        # ---- . ---- ---- ---- ---- . ----
-        # epislon_F
-        # - fermi energy
-        # ---- . ---- ---- ---- ---- . ----
-
-        self.epsilon_F: np.float64 = np.float64((self.k_F ** 2) / 2.0)
-        print(f"epsilon_F = {self.epsilon_F}")
-        print()
 
         # ---- . ---- ---- ---- ---- . ----
         # mass_star
@@ -528,41 +558,222 @@ class ParsedWData(object):
         # ---- . ---- ---- ---- ---- . ----
 
         self.mass_star: np.float64 = np.float64(1.0 / self.alpha_a_0)
-        print(f"mass_star = {self.mass_star}")
-        print()
 
-        # self.A_0 =
+        # ---- . ---- ---- ---- ---- . ----
+        # k_F
+        # - fermi momentum
+        # ---- . ---- ---- ---- ---- . ----
 
-        # pprint.pp(wdata.alpha_a)
+        self.k_F: np.float64 = np.cbrt(3.0 * (np.pi ** 2) * self.rho_tot_0)
 
-        # epison_star
+        # ---- . ---- ---- ---- ---- . ----
+        # epislon_F
+        # - fermi energy
+        # ---- . ---- ---- ---- ---- . ----
 
+        self.E_F: np.float64 = np.float64((self.k_F ** 2) / 2.0)
+
+        # ---- . ---- ---- ---- ---- . ----
+        # epislon_F_star
+        # - effective fermi energy
+        # ---- . ---- ---- ---- ---- . ----
+
+        self.E_F_star: np.float64 = np.float64(self.alpha_a_0 * self.E_F)
+
+        # ---- . ---- ---- ---- ---- . ----
+        # T
+        # - temperature
+        # ---- . ---- ---- ---- ---- . ----
+
+        self.T: np.float64 = np.float64(input['temperature'])
+
+        # ---- . ---- ---- ---- ---- . ----
+        # T_F
+        # - fermi temperature
+        # ---- . ---- ---- ---- ---- . ----
+
+        self.T_F: np.float64 = self.E_F
+
+        # ---- . ---- ---- ---- ---- . ----
+        # T_c
+        # - fermi temperature
+        # ---- . ---- ---- ---- ---- . ----
+
+        self.T_c = None
+        if self.T == 0.0:
+            self.T_c = np.float64(1.764 * self.delta_norm_0 * self.T_F / self.E_F_star)
+
+        # ---- . ---- ---- ---- ---- . ----
         # l_c
         # - coherence length
+        # ---- . ---- ---- ---- ---- . ----
+
+        self.l_c: np.float64 = np.float64((2.0 * self.E_F_star) / (np.pi * self.k_F * self.delta_norm_0))
+
+        # ---- . ---- ---- ---- ---- . ----
+        # a_s
+        # - scattering length
+        # ---- . ---- ---- ---- ---- . ----
+
+        self.a_s: np.float64 = np.float64(input['sclgth'])
+
+        # ---- . ---- ---- ---- ---- . ----
+        # lambda
+        # - density-dependent coupling constant
+        # ---- . ---- ---- ---- ---- . ----
+
+        self.lmb: np.float64 = np.abs(self.a_s * self.k_F)
+
+
+    def __json__(
+        self
+    ) -> object:
+        return {
+            # ---- . ---- ---- ---- ---- . ----
+            # grid
+            # ---- . ---- ---- ---- ---- . ----
+            'grid': {
+                'nx': self.nx,
+                'ny': self.ny,
+
+                'nx_half': self.nx_half,
+                'ny_half': self.ny_half,
+
+                'nx_fourth': self.nx_fourth,
+                'ny_fourth': self.ny_fourth,
+
+                'nx_eighth': self.nx_eighth,
+                'ny_eighth': self.ny_eighth,
+
+                'nx_sixteenth': self.nx_sixteenth,
+                'ny_sixteenth': self.ny_sixteenth,
+
+                'dx': self.dx,
+                'dy': self.dy,
+            },
+
+            # ---- . ---- ---- ---- ---- . ----
+            # radius
+            # ---- . ---- ---- ---- ---- . ----
+            'radius': {
+                'x_v_index': self.x_v_index,
+                'y_v_index': self.y_v_index,
+
+                'x_0_index': self.x_0_index,
+                'y_0_index': self.y_0_index,
+
+                'x_v': self.x_v,
+                'y_v': self.y_v,
+
+                'x_0': self.x_0,
+                'y_0': self.y_0,
+
+                'r_v': self.r_v,
+                'r_0': self.r_0,
+                'r_precision': self.r_precision,
+            },
+
+            # ---- . ---- ---- ---- ---- . ----
+            # calculated:
+            # ---- . ---- ---- ---- ---- . ----
+            'calculated': {
+                'rho_a_v': self.rho_a_v,
+                'rho_b_v': self.rho_b_v,
+                'rho_tot_v': self.rho_tot_v,
+
+                'rho_a_0': self.rho_a_0,
+                'rho_b_0': self.rho_b_0,
+                'rho_tot_0': self.rho_tot_0,
+
+                'delta_norm_0': self.delta_norm_0,
+
+                'mass_star': self.mass_star,
+
+                'k_F': self.k_F,
+
+                'E_F_star': self.E_F_star,
+
+                'T': self.T,
+
+                'T_F': self.T_F,
+
+                'T_c': self.T_c,
+
+                'l_c': self.l_c,
+
+                'a_s': self.a_s,
+
+                'lmb': self.lmb,
+            }
+        }
+
+
+    def __str__(
+        self
+    ):
+        return json.dumps(self.__json__(), indent=4)
+
+
+    def __load_wdata(
+        self,
+        data_dir: WData,
+    ) -> WData:
+        return WData.load(data_dir + "/sv-ddcc05p00-T0p05.wtxt")
+
+
+    def __load_input(
+        self,
+        data_dir: WData,
+    ) -> object:
+        handle = open(data_dir + "/input.txt", "r")
+        input = handle.read()
+
+        # sclgth
+        sclgth = self.__parse_float_from_string(
+            r"sclgth *([-+\.\d]+)", input
+        )
+
+        # temperature
+        temperature = self.__parse_float_from_string(
+            r"temperature *([-+\.\d]+)", input
+        )
+
+        # return
+        return {
+            'sclgth': sclgth,
+            'temperature': temperature,
+        }
+
+
+    def __parse_float_from_string(
+        self,
+        pattern,
+        input
+    ):
+        match = re.search(pattern, input)
+        if not match:
+            raise RuntimeError('could not parse: r"' + str(pattern) + '"')
+
+        return float(match.group(1))
+
 
     def __calc_arithmetic_mean_over_circle(
         self,
-        x: List[float],
-        y: List[float],
         data: np.ndarray,
-        R: float,
-        epsilon: float = 0.01
+        r: float,
+        r_precision: float = 0.01
     ) -> np.float64:
-        # Check which indices lie on a circle with radius R, with precision epsilon:
-        indices = []
-        for i in range(0, len(x)):
-            for j in range(0, len(y)):
-                r = np.sqrt(x[i] ** 2 + y[j] ** 2)
-
-                if np.abs(r - R) <= epsilon:
-                    indices.append([i, j])
+        # Check which points lie on a circle with radius r, with r_precision:
+        ijrPoints = self.ijrGrid.get_points_by_radius(r, r_precision)
 
         # calc data's arithmetic mean value on the circle:
         result = np.float64(0.0)
-        for i, j in indices:
-            # print (f"{x[i]}, {y[j]} ---> r = {np.sqrt(x[i] ** 2 + y[j] ** 2)}")
+        for point in ijrPoints:
+            i = point.i
+            j = point.j
             result += data[i, j]
-        result /= len(indices)
+
+        result /= len(ijrPoints)
 
         return result
 
@@ -1579,7 +1790,7 @@ def gen_grid_of_subplots_of_03_series_of_2d_data_vector(
 #! ---- . ---- ---- ---- ---- . ----
 
 
-def gen_plot_handle_exception(
+def __gen_plot_handle_exception(
     out_file,
     e: Exception
 ):
@@ -1621,6 +1832,7 @@ def gen_plot_01_rho(
 
 ) -> None:
     try:
+        print("drawing: " + out_file)
 
         p = Plot(
             subplot_w = subplot_w,
@@ -1686,7 +1898,7 @@ def gen_plot_01_rho(
         p.fig.savefig(fname = out_file, dpi = dpi)
 
     except Exception as e:
-        gen_plot_handle_exception(out_file, e)
+        __gen_plot_handle_exception(out_file, e)
 
 
 def gen_plot_02_delta(
@@ -1715,6 +1927,7 @@ def gen_plot_02_delta(
 
 ) -> None:
     try:
+        print("drawing: " + out_file)
 
         p = Plot(
             subplot_w = subplot_w,
@@ -1768,7 +1981,7 @@ def gen_plot_02_delta(
         p.fig.savefig(fname = out_file, dpi = dpi)
 
     except Exception as e:
-        gen_plot_handle_exception(out_file, e)
+        __gen_plot_handle_exception(out_file, e)
 
 
 def gen_plot_03_j(
@@ -1843,6 +2056,7 @@ def gen_plot_03_j(
 
 ) -> None:
     try:
+        print("drawing: " + out_file)
 
         p = Plot(
             subplot_w = subplot_w,
@@ -1959,7 +2173,7 @@ def gen_plot_03_j(
         p.fig.savefig(fname = out_file, dpi = dpi)
 
     except Exception as e:
-        gen_plot_handle_exception(out_file, e)
+        __gen_plot_handle_exception(out_file, e)
 
 
 def gen_plot_04_nu(
@@ -1988,6 +2202,7 @@ def gen_plot_04_nu(
 
 ) -> None:
     try:
+        print("drawing: " + out_file)
 
         p = Plot(
             subplot_w = subplot_w,
@@ -2041,7 +2256,7 @@ def gen_plot_04_nu(
         p.fig.savefig(fname = out_file, dpi = dpi)
 
     except Exception as e:
-        gen_plot_handle_exception(out_file, e)
+        __gen_plot_handle_exception(out_file, e)
 
 
 def gen_plot_05_tau(
@@ -2078,6 +2293,7 @@ def gen_plot_05_tau(
 
 ) -> None:
     try:
+        print("drawing: " + out_file)
 
         p = Plot(
             subplot_w = subplot_w,
@@ -2143,7 +2359,7 @@ def gen_plot_05_tau(
         p.fig.savefig(fname = out_file, dpi = dpi)
 
     except Exception as e:
-        gen_plot_handle_exception(out_file, e)
+        __gen_plot_handle_exception(out_file, e)
 
 
 def gen_plot_06_V(
@@ -2180,6 +2396,7 @@ def gen_plot_06_V(
 
 ) -> None:
     try:
+        print("drawing: " + out_file)
 
         p = Plot(
             subplot_w = subplot_w,
@@ -2245,7 +2462,7 @@ def gen_plot_06_V(
         p.fig.savefig(fname = out_file, dpi = dpi)
 
     except Exception as e:
-        gen_plot_handle_exception(out_file, e)
+        __gen_plot_handle_exception(out_file, e)
 
 
 def gen_plot_07_V_ext(
@@ -2282,6 +2499,7 @@ def gen_plot_07_V_ext(
 
 ) -> None:
     try:
+        print("drawing: " + out_file)
 
         p = Plot(
             subplot_w = subplot_w,
@@ -2347,7 +2565,7 @@ def gen_plot_07_V_ext(
         p.fig.savefig(fname = out_file, dpi = dpi)
 
     except Exception as e:
-        gen_plot_handle_exception(out_file, e)
+        __gen_plot_handle_exception(out_file, e)
 
 
 def gen_plot_08_delta_ext(
@@ -2376,6 +2594,7 @@ def gen_plot_08_delta_ext(
 
 ) -> None:
     try:
+        print("drawing: " + out_file)
 
         p = Plot(
             subplot_w = subplot_w,
@@ -2429,7 +2648,7 @@ def gen_plot_08_delta_ext(
         p.fig.savefig(fname = out_file, dpi = dpi)
 
     except Exception as e:
-        gen_plot_handle_exception(out_file, e)
+        __gen_plot_handle_exception(out_file, e)
 
 
 def gen_plot_09_velocity_ext(
@@ -2504,6 +2723,7 @@ def gen_plot_09_velocity_ext(
 
 ) -> None:
     try:
+        print("drawing: " + out_file)
 
         p = Plot(
             subplot_w = subplot_w,
@@ -2620,7 +2840,7 @@ def gen_plot_09_velocity_ext(
         p.fig.savefig(fname = out_file, dpi = dpi)
 
     except Exception as e:
-        gen_plot_handle_exception(out_file, e)
+        __gen_plot_handle_exception(out_file, e)
 
 
 def gen_plot_10_alpha(
@@ -2657,6 +2877,7 @@ def gen_plot_10_alpha(
 
 ) -> None:
     try:
+        print("drawing: " + out_file)
 
         p = Plot(
             subplot_w = subplot_w,
@@ -2722,7 +2943,7 @@ def gen_plot_10_alpha(
         p.fig.savefig(fname = out_file, dpi = dpi)
 
     except Exception as e:
-        gen_plot_handle_exception(out_file, e)
+        __gen_plot_handle_exception(out_file, e)
 
 
 def gen_plot_11_A(
@@ -2797,6 +3018,7 @@ def gen_plot_11_A(
 
 ) -> None:
     try:
+        print("drawing: " + out_file)
 
         p = Plot(
             subplot_w = subplot_w,
@@ -2913,7 +3135,7 @@ def gen_plot_11_A(
         p.fig.savefig(fname = out_file, dpi = dpi)
 
     except Exception as e:
-        gen_plot_handle_exception(out_file, e)
+        __gen_plot_handle_exception(out_file, e)
 
 
 #! ---- . ---- ---- ---- ---- . ----
@@ -2928,7 +3150,7 @@ def plot_01_rho(
     subplot_w: int,
     subplot_h: int,
 
-    parsed: ParsedWData
+    parsed: ParsedData
 ) -> None:
     gen_plot_01_rho(
         out_file = out_dir + "/plot 01 - rho - normal density.png",
@@ -3004,7 +3226,7 @@ def plot_02_delta(
     subplot_w: int,
     subplot_h: int,
 
-    parsed: ParsedWData
+    parsed: ParsedData
 ) -> None:
     gen_plot_02_delta(
         out_file = out_dir + "/plot 02 - delta - pairing gap function.png",
@@ -3064,7 +3286,7 @@ def plot_03_j(
     subplot_w: int,
     subplot_h: int,
 
-    parsed: ParsedWData
+    parsed: ParsedData
 ) -> None:
     gen_plot_03_j(
         out_file = out_dir + "/plot 03 - j - current density.png",
@@ -3216,7 +3438,7 @@ def plot_04_nu(
     subplot_w: int,
     subplot_h: int,
 
-    parsed: ParsedWData
+    parsed: ParsedData
 ) -> None:
     gen_plot_04_nu(
         out_file = out_dir + "/plot 04 - nu.png",
@@ -3276,7 +3498,7 @@ def plot_05_tau(
     subplot_w: int,
     subplot_h: int,
 
-    parsed: ParsedWData
+    parsed: ParsedData
 ) -> None:
     gen_plot_05_tau(
         out_file = out_dir + "/plot 05 - tau.png",
@@ -3352,7 +3574,7 @@ def plot_06_V(
     subplot_w: int,
     subplot_h: int,
 
-    parsed: ParsedWData
+    parsed: ParsedData
 ) -> None:
     gen_plot_06_V(
         out_file = out_dir + "/plot 06 - V.png",
@@ -3428,7 +3650,7 @@ def plot_07_V_ext(
     subplot_w: int,
     subplot_h: int,
 
-    parsed: ParsedWData
+    parsed: ParsedData
 ) -> None:
     gen_plot_07_V_ext(
         out_file = out_dir + "/plot 07 - V_ext.png",
@@ -3504,7 +3726,7 @@ def plot_08_delta_ext(
     subplot_w: int,
     subplot_h: int,
 
-    parsed: ParsedWData
+    parsed: ParsedData
 ) -> None:
     gen_plot_08_delta_ext(
         out_file = out_dir + "/plot 08 - delta_ext.png",
@@ -3564,7 +3786,7 @@ def plot_09_velocity_ext(
     subplot_w: int,
     subplot_h: int,
 
-    parsed: ParsedWData
+    parsed: ParsedData
 ) -> None:
     gen_plot_09_velocity_ext(
         out_file = out_dir + "/plot 09 - velocity_ext.png",
@@ -3716,7 +3938,7 @@ def plot_10_alpha(
     subplot_w: int,
     subplot_h: int,
 
-    parsed: ParsedWData
+    parsed: ParsedData
 ) -> None:
     gen_plot_10_alpha(
         out_file = out_dir + "/plot 10 - alpha.png",
@@ -3792,7 +4014,7 @@ def plot_11_A(
     subplot_w: int,
     subplot_h: int,
 
-    parsed: ParsedWData
+    parsed: ParsedData
 ) -> None:
     gen_plot_11_A(
         out_file = out_dir + "/plot 11 - A.png",
@@ -3937,33 +4159,24 @@ def plot_11_A(
     # )
 
 
+pass
 #! ---- . ---- ---- ---- ---- . ----
-#! start:
+#! plot systen properties:
 #! ---- . ---- ---- ---- ---- . ----
 
 
-def main() -> int:
-    """
-    entry point
-    """
-
-    in_dir = "/workspace/results/data"
-    in_file = in_dir + "/st-vortex-recreation-01/sv-ddcc05p00-T0p05.wtxt"
-    wdata = WData.load(in_file)
-
-    iteration = -1
-    parsed = ParsedWData(wdata, iteration)
+def plot(
+    parsed: ParsedData,
+    outpud_dir: str
+):
 
     subplot_w = 7
     subplot_h = 7
 
-    out_dir = "/workspace/results/analysis"
     dpi = 300
 
-    # plot:
-
     plot_01_rho(
-        out_dir = out_dir,
+        out_dir = outpud_dir,
         dpi = dpi,
         subplot_w = subplot_w,
         subplot_h = subplot_h,
@@ -3971,7 +4184,7 @@ def main() -> int:
     )
 
     plot_02_delta(
-        out_dir = out_dir,
+        out_dir = outpud_dir,
         dpi = dpi,
         subplot_w = subplot_w,
         subplot_h = subplot_h,
@@ -3979,7 +4192,7 @@ def main() -> int:
     )
 
     plot_03_j(
-        out_dir = out_dir,
+        out_dir = outpud_dir,
         dpi = dpi,
         subplot_w = subplot_w,
         subplot_h = subplot_h,
@@ -3987,7 +4200,7 @@ def main() -> int:
     )
 
     plot_04_nu(
-        out_dir = out_dir,
+        out_dir = outpud_dir,
         dpi = dpi,
         subplot_w = subplot_w,
         subplot_h = subplot_h,
@@ -3995,7 +4208,7 @@ def main() -> int:
     )
 
     plot_05_tau(
-        out_dir = out_dir,
+        out_dir = outpud_dir,
         dpi = dpi,
         subplot_w = subplot_w,
         subplot_h = subplot_h,
@@ -4003,7 +4216,7 @@ def main() -> int:
     )
 
     plot_06_V(
-        out_dir = out_dir,
+        out_dir = outpud_dir,
         dpi = dpi,
         subplot_w = subplot_w,
         subplot_h = subplot_h,
@@ -4011,7 +4224,7 @@ def main() -> int:
     )
 
     plot_07_V_ext(
-        out_dir = out_dir,
+        out_dir = outpud_dir,
         dpi = dpi,
         subplot_w = subplot_w,
         subplot_h = subplot_h,
@@ -4019,7 +4232,7 @@ def main() -> int:
     )
 
     plot_07_V_ext(
-        out_dir = out_dir,
+        out_dir = outpud_dir,
         dpi = dpi,
         subplot_w = subplot_w,
         subplot_h = subplot_h,
@@ -4027,7 +4240,7 @@ def main() -> int:
     )
 
     plot_08_delta_ext(
-        out_dir = out_dir,
+        out_dir = outpud_dir,
         dpi = dpi,
         subplot_w = subplot_w,
         subplot_h = subplot_h,
@@ -4035,7 +4248,7 @@ def main() -> int:
     )
 
     plot_09_velocity_ext(
-        out_dir = out_dir,
+        out_dir = outpud_dir,
         dpi = dpi,
         subplot_w = subplot_w,
         subplot_h = subplot_h,
@@ -4043,7 +4256,7 @@ def main() -> int:
     )
 
     plot_10_alpha(
-        out_dir = out_dir,
+        out_dir = outpud_dir,
         dpi = dpi,
         subplot_w = subplot_w,
         subplot_h = subplot_h,
@@ -4051,15 +4264,56 @@ def main() -> int:
     )
 
     plot_11_A(
-        out_dir = out_dir,
+        out_dir = outpud_dir,
         dpi = dpi,
         subplot_w = subplot_w,
         subplot_h = subplot_h,
         parsed = parsed
     )
 
-    return 0
 
+#! ---- . ---- ---- ---- ---- . ----
+#! start:
+#! ---- . ---- ---- ---- ---- . ----
+
+def main() -> int:
+    results_dir = '/workspace/results'
+    input_dir = results_dir + '/data'
+    output_dir = results_dir + '/analysis'
+    for simulation in os.listdir(input_dir):
+        # skip inalid dirs:
+        if not re.search(
+            r"st_vortex_01_data_\d+_input_80_80_\d+\.\d+",
+            simulation
+        ):
+            continue
+
+        # gen in/out dir paths:
+        simulation_input_dir = input_dir + '/' + simulation
+        simulation_output_dir = output_dir + '/' + simulation
+
+        # create out dir:
+        try:
+            os.mkdir(simulation_output_dir)
+        except FileExistsError:
+            pass # do nothing
+
+        # check if input dir exists:
+        if not os.path.exists(simulation_input_dir):
+            raise RuntimeError('input dir does not exist')
+
+        # check if input dir exists:
+        if not os.path.exists(simulation_output_dir):
+            raise RuntimeError('output dir does not exist')
+
+        # parse data
+        parsed = ParsedData(simulation_input_dir)
+        print(parsed)
+
+        # # plot
+        # plot(parsed, simulation_output_dir)
+
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main())

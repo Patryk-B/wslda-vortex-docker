@@ -142,7 +142,9 @@ RUN pip3 install\
     numpy==2.1.2\
     scipy==1.14.1\
     matplotlib==3.9.2\
-    wdata==0.2.0
+    wdata==0.2.0\
+    python-dotenv\
+    paramiko
 
 # test python3 package versions
 RUN pip3 list | grep "numpy *2.1.2"
@@ -168,6 +170,14 @@ RUN curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | gpg --dearmor | tee /usr
 RUN echo "deb [signed-by=/usr/share/keyrings/yarn.gpg] https://dl.yarnpkg.com/debian/ stable main" > /etc/apt/sources.list.d/yarn.list
 RUN apt-get update
 RUN apt-get install -y yarn
+
+#? ---- . ---- ---- ---- ---- . ----
+#? proper:
+#? - node:
+#? ---- . ---- ---- ---- ---- . ----
+
+# install required packages:
+RUN apt-get install -y sshfs sshpass
 
 #? ---- . ---- ---- ---- ---- . ----
 #? entrypoint script
